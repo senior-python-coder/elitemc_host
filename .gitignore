@@ -1,0 +1,118 @@
+# ═══════════════════════════════════════════════
+# EliteMC.uz - Professional .gitignore
+# ═══════════════════════════════════════════════
+
+# ─── Database fayllar ───
+*.db
+*.sqlite
+*.sqlite3
+elitemc.db
+*.db-journal
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ─── Virtual Environment ───
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# ─── Flask ───
+instance/
+.webassets-cache
+
+# ─── Uploads (faqat test uchun local fayllar) ───
+static/uploads/*
+!static/uploads/.gitkeep
+
+# ─── Logs ───
+*.log
+logs/
+*.log.*
+
+# ─── Environment variables ───
+.env
+.env.local
+.env.production
+.flaskenv
+
+# ─── IDE / Editor ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ─── OS ───
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ─── Testing ───
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ─── Jupyter Notebook ───
+.ipynb_checkpoints
+
+# ─── mypy ───
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ─── Secrets va Backup ───
+*.pem
+*.key
+*.secret
+backup/
+*.backup
+*.bak
+
+# ─── Render / Production ───
+.render/
+*.pid
+
+# ─── News images (agar local test bo'lsa) ───
+news.json
