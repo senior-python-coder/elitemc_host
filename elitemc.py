@@ -1838,18 +1838,14 @@ def api_stats():
 # ═══════════════════════════════════════════════
 
 if __name__ == '__main__':
+
     init_db()
+    port = int(os.environ.get("PORT", 5000))
+    
     print("=" * 62)
     print("  🎮  EliteMC.uz — Ultra Premium Donate Platform")
     print("=" * 62)
-    print(f"  📍 URL          : http://localhost:5000")
+    print(f"  📍 URL          : http://0.0.0.0:{port}")
     print(f"  👤 Admin        : admin")
-    print(f"  🔒 Password     : admin123")
-    print(f"  🔌 WebSocket    : Enabled (Socket.IO)")
-    print(f"  🛡️  MCRCON       : {'Available ✅' if MCRCON_AVAILABLE else 'Not installed ⚠️ (install mcrcon)'}")
     print("=" * 62)
-    print("  ⚠️  Set RCON credentials via /admin/settings")
-    print("=" * 62)
-
-
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
