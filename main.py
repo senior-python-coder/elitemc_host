@@ -1228,24 +1228,6 @@ def add_news():
         return jsonify(success=False, message=f"Xatolik: {str(e)}")
 
 
-@app.route('/admin/news/add', methods=['POST'])
-@admin_required
-def add_news():
-    # KOD ICHKARIDA BO'LISHI KERAK
-    data = request.get_json()
-    title = sanitize(data.get('title'))
-    content = sanitize(data.get('content'))
-
-    if not title or not content:
-        return jsonify(success=False, message="Ma'lumotlar to'liq emas!")
-
-    conn = get_db()
-    conn.execute('INSERT INTO news (title, content) VALUES (?, ?)', (title, content))
-    conn.commit()
-    conn.close()
-    return jsonify(success=True, message="Yangilik qo'shildi!")
-
-
 @app.route('/admin/news/delete/<int:nid>', methods=['POST'])
 @admin_required
 def delete_news(nid):
@@ -3191,3 +3173,4 @@ if __name__ == '__main__':
     print("=" * 62)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
