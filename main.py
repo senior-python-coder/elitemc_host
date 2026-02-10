@@ -3174,17 +3174,20 @@ def update_player_stats():
         return jsonify(success=False, error=str(e))
 
 
+# ═══════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════
+
 if __name__ == '__main__':
     init_db()
+    
+    port = int(os.environ.get("PORT", 5000))
+    
     print("=" * 62)
     print("  🎮  EliteMC.uz — Ultra Premium Donate Platform")
     print("=" * 62)
-    print(f"  📍 URL          : http://localhost:5000")
+    print(f"  📍 URL          : http://0.0.0.0:{port}")
     print(f"  👤 Admin        : admin")
-    print(f"  🔒 Password     : ssmertnix_legend")
-    print(f"  🔌 WebSocket    : Enabled (Socket.IO)")
-    print(f"  🎵 Music        : Enabled (toggle via floating btn)")
-    print(f"  🛡️  MCRCON       : {'Available ✅' if MCRCON_AVAILABLE else 'Not installed ⚠️'}")
-    print(f"  👑 Ranks Panel  : /admin/ranks (NEW!)")
     print("=" * 62)
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
