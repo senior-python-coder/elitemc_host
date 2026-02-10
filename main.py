@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, redirect, url_for, session, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import mysql.connector
+import json
 import sqlite3
 import secrets
 import hashlib
@@ -13,13 +13,6 @@ from collections import OrderedDict
 import os
 import mysql.connector
 from flask import Flask, request, render_template, redirect
-
-DB_HOST = os.getenv("DB_HOST")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_NAME = os.getenv("DB_NAME")
-
-
 try:
     from mcstatus import JavaServer
 
@@ -1203,7 +1196,6 @@ def news_page():
 @app.route('/admin/add_news', methods=['POST'])
 @admin_required
 def add_news():
-    # Form ma'lumotlarini olish
     title = request.form.get('title', '').strip()
     content = request.form.get('content', '').strip()
     image_url = None
@@ -1211,29 +1203,49 @@ def add_news():
     if not title or not content:
         return jsonify(success=False, message="Sarlavha va matn talab qilinadi!")
 
-    # Rasmni yuklash logikasi
+    # Rasm yuklash
     if 'image' in request.files:
         file = request.files['image']
         if file and file.filename and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            # Fayl nomini unikal qilish (vaqt qo'shish)
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             name, ext = os.path.splitext(filename)
             unique_filename = f"{name}_{timestamp}{ext}"
 
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             file.save(filepath)
+
             image_url = f"/static/uploads/{unique_filename}"
 
     try:
-        conn = get_db()
-        conn.execute('INSERT INTO news (title, content, image) VALUES (?, ?, ?)',
-                     (title, content, image_url))
-        conn.commit()
-        conn.close()
-        return jsonify(success=True, message="Yangilik muvaffaqiyatli qo'shildi!")
+        import json
+
+        news_file = "news.json"
+
+        # Oldingi news yuklash
+        try:
+            with open(news_file, "r", encoding="utf-8") as f:
+                news_list = json.load(f)
+        except:
+            news_list = []
+
+        # Yangi news qo‘shish
+        news_list.append({
+            "title": title,
+            "content": content,
+            "image": image_url,
+            "time": datetime.datetime.now().isoformat()
+        })
+
+        # Saqlash
+        with open(news_file, "w", encoding="utf-8") as f:
+            json.dump(news_list, f, indent=4, ensure_ascii=False)
+
+        return jsonify(success=True, message="Yangilik muvaffaqiyatli qo‘shildi!")
+
     except Exception as e:
         return jsonify(success=False, message=f"Xatolik: {str(e)}")
+
 
 
 @app.route('/admin/news/delete/<int:nid>', methods=['POST'])
@@ -1245,6 +1257,7 @@ def delete_news(nid):
     conn.commit()
     conn.close()
     return jsonify(success=True, message="Yangilik o'chirildi!")
+
 
 
 # ═══════════════════════════════════════════════
@@ -3181,5 +3194,6 @@ if __name__ == '__main__':
     print("=" * 62)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
 
 
