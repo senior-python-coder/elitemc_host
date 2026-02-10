@@ -3177,10 +3177,6 @@ def update_player_stats():
         return jsonify(success=False, error=str(e))
 
 
-# ═══════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════
-
 if __name__ == '__main__':
     init_db()
     
@@ -3193,7 +3189,5 @@ if __name__ == '__main__':
     print(f"  👤 Admin        : admin")
     print("=" * 62)
 
+    # Render uchun: gunicorn ishlatiladi, shuning uchun bu qism faqat local test uchun
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
-
-
-
