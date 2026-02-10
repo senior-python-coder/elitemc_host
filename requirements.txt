@@ -6,3 +6,4 @@ Werkzeug>=3.0.0
 mcrcon>=0.1.2
 mcstatus
 mysql-connector-python
+gunicorn
