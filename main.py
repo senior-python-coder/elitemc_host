@@ -3177,17 +3177,32 @@ def update_player_stats():
         return jsonify(success=False, error=str(e))
 
 
-if __name__ == '__main__':
+# Database yaratish (agar yo'q bo'lsa)
+if not os.path.exists('elitemc.db'):
+    print("=" * 62)
+    print("  🔄 DATABASE YARATILMOQDA...")
+    print("=" * 62)
     init_db()
-    
+    print("  ✅ DATABASE TAYYOR!")
+    print("=" * 62)
+
+# ═══════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════
+
+if __name__ == '__main__':
+    # Faqat local test uchun
     port = int(os.environ.get("PORT", 5000))
     
     print("=" * 62)
     print("  🎮  EliteMC.uz — Ultra Premium Donate Platform")
     print("=" * 62)
     print(f"  📍 URL          : http://0.0.0.0:{port}")
-    print(f"  👤 Admin        : admin")
+    print(f"  👤 Admin        : admin / ssmertnix_legend")
     print("=" * 62)
 
-    # Render uchun: gunicorn ishlatiladi, shuning uchun bu qism faqat local test uchun
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+else:
+    # Gunicorn uchun (production)
+    print("🚀 Production mode - Gunicorn")False)
+
