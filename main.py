@@ -10,6 +10,15 @@ import html as html_module
 from functools import wraps
 from werkzeug.utils import secure_filename
 from collections import OrderedDict
+import os
+import mysql.connector
+from flask import Flask, request, render_template, redirect
+
+DB_HOST = os.getenv("DB_HOST")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+
 
 try:
     from mcstatus import JavaServer
@@ -33,7 +42,6 @@ app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-
 
 def get_real_online(ip_address):
     if not MCSTATUS_AVAILABLE:
@@ -3173,4 +3181,5 @@ if __name__ == '__main__':
     print("=" * 62)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
 
