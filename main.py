@@ -27,12 +27,17 @@ try:
 except ImportError:
     MCRCON_AVAILABLE = False
 
+DATABASE_URL = os.environ.get('DATABASE_URL')  # PostgreSQL URL
+SECRET_KEY = os.environ.get('SECRET_KEY', 'dev_fallback_key_12345')
+
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(64)
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.secret_key = SECRET_KEY
+
+# Session sozlamalari
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
@@ -3196,5 +3201,6 @@ if __name__ == '__main__':
     print("=" * 62)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
 
 
