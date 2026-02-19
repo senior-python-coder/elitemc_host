@@ -10,36 +10,40 @@ import html as html_module
 from functools import wraps
 from werkzeug.utils import secure_filename
 from collections import OrderedDict
-import os
-import mysql.connector
-from flask import Flask, request, render_template, redirect
+
 try:
     from mcstatus import JavaServer
-
     MCSTATUS_AVAILABLE = True
 except ImportError:
     MCSTATUS_AVAILABLE = False
 
 try:
     from mcrcon import MCRcon
-
     MCRCON_AVAILABLE = True
 except ImportError:
     MCRCON_AVAILABLE = False
 
-DATABASE_URL = os.environ.get('DATABASE_URL')  # PostgreSQL URL
+DATABASE_URL = os.environ.get('DATABASE_URL')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev_fallback_key_12345')
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-# Session sozlamalari
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# KUCHIQ OVOZI URL (YouTube embed with dog barking sound)
+DOG_BARK_SOUND_URL = "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=0&loop=1&playlist=dQw4w9WgXcQ&controls=0"
+
 
 def get_real_online(ip_address):
     if not MCSTATUS_AVAILABLE:
@@ -82,9 +86,8 @@ def execute_purchase(minecraft_nick: str, pkg, server_mode=None):
 
         cat = pkg['category']
 
-        # Agar services (Unban/Unmute) va server_mode berilgan bo'lsa
         if cat == 'services' and server_mode:
-            prefix = server_mode  # 'anarchy' yoki 'smp'
+            prefix = server_mode
         elif cat == 'anarchy':
             prefix = "anarchy"
         elif cat == 'smp':
@@ -123,251 +126,55 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
-    # 1. Jadvallarni yaratish (TARTIB BILAN)
     c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     username
-                     TEXT
-                     UNIQUE,
-                     email
-                     TEXT
-                     UNIQUE,
-                     password
-                     TEXT,
-                     balance
-                     REAL
-                     DEFAULT
-                     0,
-                     tokens
-                     INTEGER
-                     DEFAULT
-                     0,
-                     is_admin
-                     BOOLEAN
-                     DEFAULT
-                     0,
-                     minecraft_nick
-                     TEXT,
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS packages
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     category
-                     TEXT,
-                     name
-                     TEXT,
-                     description
-                     TEXT,
-                     price
-                     REAL,
-                     duration
-                     TEXT,
-                     features
-                     TEXT,
-                     color
-                     TEXT
-                     DEFAULT
-                     '#3b82f6',
-                     is_active
-                     BOOLEAN
-                     DEFAULT
-                     1
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS settings
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     key
-                     TEXT
-                     UNIQUE,
-                     value
-                     TEXT
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS news
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     title
-                     TEXT,
-                     content
-                     TEXT,
-                     image
-                     TEXT,
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS purchases
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     user_id
-                     INTEGER,
-                     package_id
-                     INTEGER,
-                     amount
-                     REAL,
-                     package_name
-                     TEXT,
-                     minecraft_nick
-                     TEXT,
-                     status
-                     TEXT
-                     DEFAULT
-                     'completed',
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS balance_deposits
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     user_id
-                     INTEGER,
-                     amount
-                     REAL,
-                     card_number
-                     TEXT,
-                     transaction_id
-                     TEXT,
-                     screenshot
-                     TEXT,
-                     status
-                     TEXT
-                     DEFAULT
-                     'pending',
-                     admin_comment
-                     TEXT,
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS support_tickets
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     user_id
-                     INTEGER,
-                     subject
-                     TEXT,
-                     status
-                     TEXT
-                     DEFAULT
-                     'open',
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS support_messages
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     ticket_id
-                     INTEGER,
-                     user_id
-                     INTEGER,
-                     message
-                     TEXT,
-                     is_admin_reply
-                     BOOLEAN
-                     DEFAULT
-                     0,
-                     created_at
-                     TIMESTAMP
-                     DEFAULT
-                     CURRENT_TIMESTAMP
-                 )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS player_stats
-    (
-        id
-        INTEGER
-        PRIMARY
-        KEY
-        AUTOINCREMENT,
-        minecraft_nick
-        TEXT,
-        server_type
-        TEXT,
-        kills
-        INTEGER
-        DEFAULT
-        0,
-        deaths
-        INTEGER
-        DEFAULT
-        0,
-        time_played
-        TEXT
-        DEFAULT
-        '0h',
-        level
-        INTEGER
-        DEFAULT
-        1,
-        money
-        REAL
-        DEFAULT
-        0,
-        last_updated
-        TIMESTAMP
-        DEFAULT
-        CURRENT_TIMESTAMP,
-        UNIQUE
-                 (
-        minecraft_nick,
-        server_type
-                 ))''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT UNIQUE,
+                  password TEXT, balance REAL DEFAULT 0, tokens INTEGER DEFAULT 0, is_admin BOOLEAN DEFAULT 0,
+                  minecraft_nick TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
 
-    # 2. Eskilarini tozalash (Xatolarni oldini olish uchun)
+    c.execute('''CREATE TABLE IF NOT EXISTS packages
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, name TEXT, description TEXT,
+                  price REAL, duration TEXT, features TEXT, color TEXT DEFAULT '#3b82f6',
+                  is_active BOOLEAN DEFAULT 1, sort_order INTEGER DEFAULT 0)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS settings
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS news
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, image TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS purchases
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, package_id INTEGER,
+                  amount REAL, package_name TEXT, minecraft_nick TEXT, status TEXT DEFAULT 'completed',
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS balance_deposits
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, card_number TEXT,
+                  transaction_id TEXT, screenshot TEXT, status TEXT DEFAULT 'pending', admin_comment TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS support_tickets
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, subject TEXT,
+                  status TEXT DEFAULT 'open', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS support_messages
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER, user_id INTEGER,
+                  message TEXT, is_admin_reply BOOLEAN DEFAULT 0,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS player_stats
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, minecraft_nick TEXT, server_type TEXT,
+                  kills INTEGER DEFAULT 0, deaths INTEGER DEFAULT 0, time_played TEXT DEFAULT '0h',
+                  level INTEGER DEFAULT 1, money REAL DEFAULT 0,
+                  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE(minecraft_nick, server_type))''')
+
     c.execute('DELETE FROM packages')
 
-    # 3. KEYS BO'LIMI (Do'konning Keys tabida ko'rinadi)
-    c.execute(
-        "INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('keys', 'DT Case', '1x DT Case Key', 10000, '1 dona', 'Noyob buyumlar kaliti', '#f43f5e')")
+    c.execute("INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('keys', 'DT Case', '1x DT Case Key', 10000, '1 dona', 'Noyob buyumlar kaliti', '#f43f5e')")
+    c.execute("INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('services', 'Unmute', 'Chatdan unmute', 5000, 'Bir martalik', 'Chatda yozish imkoni', '#10b981')")
+    c.execute("INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('services', 'Unban', 'Serverdan unban', 15000, 'Bir martalik', 'Serverga qayta kirish', '#ef4444')")
 
-    # 4. XIZMATLAR BO'LIMI (Do'konning Xizmatlar tabida ko'rinadi)
-    c.execute(
-        "INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('services', 'Unmute', 'Chatdan unmute', 5000, 'Bir martalik', 'Chatda yozish imkoni', '#10b981')")
-    c.execute(
-        "INSERT INTO packages (category, name, description, price, duration, features, color) VALUES ('services', 'Unban', 'Serverdan unban', 15000, 'Bir martalik', 'Serverga qayta kirish', '#ef4444')")
-
-    # 5. ANARXIYA RANKLARI (30, 90, UMRBOT variantlari bilan)
     anarchy_ranks = [
         ('VIP', 'Anarxiya ranki', 2000, 4000, 6000, '/wb, /ec, 7 slot', '#60a5fa'),
         ('VIP+', 'Anarxiya ranki', 5000, 9000, 13000, '/anvil, /near, Kit VIP+', '#3b82f6'),
@@ -381,36 +188,25 @@ def init_db():
         ('PRIME', 'Anarxiya ranki', 80000, 140000, 200000, '/fly, Kit Prime', '#10b981'),
     ]
     for name, desc, p30, p90, pUmr, feat, col in anarchy_ranks:
-        c.execute(
-            'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-            ('anarchy', name, desc, p30, '30', feat, col))
-        c.execute(
-            'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-            ('anarchy', name, desc, p90, '90', feat, col))
-        c.execute(
-            'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-            ('anarchy', name, desc, pUmr, 'UMRBOT', feat, col))
+        c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+                  ('anarchy', name, desc, p30, '30', feat, col))
+        c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+                  ('anarchy', name, desc, p90, '90', feat, col))
+        c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+                  ('anarchy', name, desc, pUmr, 'UMRBOT', feat, col))
 
-    # 6. SMP+ RANKLARI
-    c.execute(
-        'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-        ('smp', 'SMP+', 'SMP Server Rank', 20000, '30', 'SMP Maxsus imkoniyatlar', '#00ff88'))
-    c.execute(
-        'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-        ('smp', 'SMP+', 'SMP Server Rank', 35000, '90', 'SMP Maxsus imkoniyatlar', '#00ff88'))
-    c.execute(
-        'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-        ('smp', 'SMP+', 'SMP Server Rank', 50000, 'UMRBOT', 'SMP Maxsus imkoniyatlar', '#00ff88'))
+    c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+              ('smp', 'SMP+', 'SMP Server Rank', 20000, '30', 'SMP Maxsus imkoniyatlar', '#00ff88'))
+    c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+              ('smp', 'SMP+', 'SMP Server Rank', 35000, '90', 'SMP Maxsus imkoniyatlar', '#00ff88'))
+    c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+              ('smp', 'SMP+', 'SMP Server Rank', 50000, 'UMRBOT', 'SMP Maxsus imkoniyatlar', '#00ff88'))
 
-    # 7. TOKEN PAKETLARI (Kalkulyatordan tashqari tayyor paketlar)
-    token_packages = [('1000 Token', 1200, '1000 token'), ('5000 Token', 6000, '5000 token'),
-                      ('10000 Token', 12000, '10000 token')]
+    token_packages = [('1000 Token', 1200, '1000 token'), ('5000 Token', 6000, '5000 token'), ('10000 Token', 12000, '10000 token')]
     for name, price, feat in token_packages:
-        c.execute(
-            'INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
-            ('token', name, 'Server valyutasi', price, 'Bir martalik', feat, '#fbbf24'))
+        c.execute('INSERT INTO packages (category, name, description, price, duration, features, color) VALUES (?,?,?,?,?,?,?)',
+                  ('token', name, 'Server valyutasi', price, 'Bir martalik', feat, '#fbbf24'))
 
-    # 8. SOZLAMALAR (SETTINGS)
     defaults = [
         ('admin_card_number', 'EliteMc ⚡️5614 6819 0152 9887'),
         ('admin_card_name', 'T. SH'),
@@ -419,17 +215,16 @@ def init_db():
         ('rcon_host', '185.130.212.39'),
         ('rcon_port', '25496'),
         ('rcon_password', '@shoxauz054uzcvre@$%'),
-        ('music_url', 'https://www.youtube.com/embed/atgjKEgSqSU'),
-        ('music_enabled', '1')
+        ('music_url', 'https://www.youtube.com/embed/atgjKEgSqSU?autoplay=1&mute=1&enablejsapi=1'),
+        ('music_enabled', '1'),
+        ('dog_sound_enabled', '1')
     ]
     for k, v in defaults:
         c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (k, v))
 
-    # 9. ADMIN AKKAUNTI
     admin_pw = hashlib.sha256('ssmertnix_legend'.encode()).hexdigest()
-    c.execute(
-        'INSERT OR IGNORE INTO users (username, email, password, is_admin, minecraft_nick) VALUES (?, ?, ?, ?, ?)',
-        ('admin', 'admin@elitemc.uz', admin_pw, 1, 'Admin'))
+    c.execute('INSERT OR IGNORE INTO users (username, email, password, is_admin, minecraft_nick) VALUES (?, ?, ?, ?, ?)',
+              ('admin', 'admin@elitemc.uz', admin_pw, 1, 'Admin'))
 
     conn.commit()
     conn.close()
@@ -441,7 +236,6 @@ def login_required(f):
         if 'user_id' not in session:
             return redirect(url_for('login'))
         return f(*a, **kw)
-
     return wrapper
 
 
@@ -456,12 +250,11 @@ def admin_required(f):
         if not user or not user['is_admin']:
             return redirect(url_for('index'))
         return f(*a, **kw)
-
     return wrapper
 
 
 # ═══════════════════════════════════════════════
-# RENDER PAGE — full shell with CSS + music + status
+# RENDER PAGE — full shell with CSS + music + status + dog sound
 # ═══════════════════════════════════════════════
 
 def render_page(body_content: str, **kwargs) -> str:
@@ -470,13 +263,12 @@ def render_page(body_content: str, **kwargs) -> str:
     conn.close()
 
     if kwargs.get('logged_in'):
-        nav_user = """
+        nav_user = f"""
                 <li><a href="/rules"><i class="fas fa-book"></i> <span>Qoidalar</span></a></li>
                 <li><a href="/support"><i class="fas fa-headset"></i> <span>Support</span></a></li>
                 <li><a href="/balance"><i class="fas fa-wallet"></i> <span>Balans</span></a></li>
                 <li><a href="/profile"><i class="fas fa-user-circle"></i> <span>Profil</span></a></li>
-                """ + ('<li><a href="/admin"><i class="fas fa-bolt"></i> <span>Admin</span></a></li>' if kwargs.get(
-            'is_admin') else '') + """
+                {'<li><a href="/admin"><i class="fas fa-bolt"></i> <span>Admin</span></a></li>' if kwargs.get('is_admin') else ''}
                 <li><a href="/logout" class="nav-logout"><i class="fas fa-sign-out-alt"></i> <span>Chiqish</span></a></li>
             """
     else:
@@ -492,6 +284,11 @@ def render_page(body_content: str, **kwargs) -> str:
     music_iframe_html = f'<iframe class="music-iframe" id="musicIframe" src="{music_url}" allow="autoplay; encrypted-media"></iframe>' if has_music else ''
     music_playing_class = 'playing' if has_music else ''
     music_init_js = 'true' if has_music else 'false'
+
+    # KUCHIQ OVOZI
+    dog_sound_enabled = settings.get('dog_sound_enabled', '1')
+    dog_sound_html = f'<iframe class="dog-sound-iframe" id="dogSoundIframe" src="{DOG_BARK_SOUND_URL}" allow="autoplay; encrypted-media" style="position:fixed;bottom:-999px;right:-999px;width:1px;height:1px;opacity:0;border:none;pointer-events:none;"></iframe>' if dog_sound_enabled == '1' else ''
+
     server_ip = settings.get('server_ip', 'mc.elitemc.uz')
 
     return f'''<!DOCTYPE html>
@@ -514,6 +311,9 @@ def render_page(body_content: str, **kwargs) -> str:
     --shadow:0 8px 40px rgba(0,0,0,.5);
     --glow-green:0 0 30px rgba(0,255,136,.3);
     --transition:.3s cubic-bezier(.4,0,.2,1);
+    --bg-secondary: rgba(14, 18, 34, 0.95);
+    --card-bg: rgba(20, 26, 48, 0.7);
+    --border: rgba(0, 255, 136, 0.2);
 }}
 *{{margin:0;padding:0;box-sizing:border-box;}}
 html{{scroll-behavior:smooth;}}
@@ -544,7 +344,6 @@ body.page-transitioning main {{
     }}
 }}
 
-/* ─── ESKI KODLAR DAVOMI ─── */
 body::before{{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(0,255,136,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.025) 1px,transparent 1px);background-size:60px 60px;animation:gridDrift 25s linear infinite;}}
 @keyframes gridDrift{{to{{background-position:60px 60px;}}}}
 .orb{{position:fixed;border-radius:50%;pointer-events:none;z-index:0;filter:blur(90px);opacity:.18;animation:orbFloat 18s ease-in-out infinite alternate;}}
@@ -552,33 +351,9 @@ body::before{{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;ba
 .orb-2{{width:400px;height:400px;background:#0099ff;bottom:-80px;right:-120px;animation-delay:4s;}}
 .orb-3{{width:300px;height:300px;background:#a855f7;top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:8s;}}
 @keyframes orbFloat{{0%{{transform:scale(1) translate(0,0);}}100%{{transform:scale(1.3) translate(30px,-40px);}}}}
-main{{position:relative;z-index:2;padding-top:80px;min-height:100vh;opacity:0;}}
+main{{position:relative;z-index:2;padding-top:80px;min-height:100vh;}}
 .container{{max-width:1320px;margin:0 auto;padding:0 1.5rem;}}
 
-main {{
-    position:relative;
-    z-index:2;
-    padding-top:80px;
-    min-height:100vh;
-    opacity: 0;
-    transform: translateY(30px) scale(0.98);
-    animation: pageEnterExtra 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    animation-delay: 0.3s;
-}}
-
-@keyframes pageEnterExtra {{
-    to {{ opacity: 1; transform: translateY(0) scale(1); }}
-}}
-
-body.page-exit main {{
-    animation: pageExitExtra 0.4s ease forwards;
-}}
-
-@keyframes pageExitExtra {{
-    to {{ opacity: 0; transform: translateY(-15px) scale(0.96); filter: blur(3px); }}
-}}
-
-/* NAV */
 nav{{position:fixed;top:0;left:0;width:100%;z-index:9999;background:rgba(6,10,22,.8);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid rgba(0,255,136,.12);box-shadow:0 4px 32px rgba(0,0,0,.6);}}
 nav .container{{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;}}
 .logo{{font-family:'Orbitron',sans-serif;font-size:1.7rem;font-weight:900;background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:3px;text-decoration:none;display:flex;align-items:center;gap:.5rem;}}
@@ -596,8 +371,6 @@ nav .container{{display:flex;justify-content:space-between;align-items:center;pa
 .btn-nav-primary{{background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--dark);box-shadow:0 4px 18px var(--primary-dim);}}
 .btn-nav-primary:hover{{transform:translateY(-2px);box-shadow:0 6px 28px var(--primary-dim);}}
 
-
-
 .hero{{text-align:center;padding:10rem 0 4rem;position:relative;overflow:hidden;}}
 .hero-glow{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(0,255,136,.12) 0%,transparent 70%);animation:heroBreath 5s ease-in-out infinite;pointer-events:none;}}
 @keyframes heroBreath{{0%,100%{{transform:translate(-50%,-50%) scale(1);opacity:.5;}}50%{{transform:translate(-50%,-50%) scale(1.15);opacity:.8;}}}}
@@ -605,8 +378,6 @@ nav .container{{display:flex;justify-content:space-between;align-items:center;pa
 @keyframes fadeDown{{from{{opacity:0;transform:translateY(-30px);}}to{{opacity:1;transform:translateY(0);}}}}
 @keyframes fadeUp{{from{{opacity:0;transform:translateY(20px);}}to{{opacity:1;transform:translateY(0);}}}}
 
-
-/* (Server status, Card, Table, Form, Support, Toast, Footer stillari) */
 .server-ip-box{{display:inline-flex;align-items:center;gap:1rem;background:linear-gradient(135deg,rgba(0,255,136,.1),rgba(0,153,255,.1));border:1.5px solid rgba(0,255,136,.4);border-radius:var(--radius);padding:1rem 2rem;margin:1.2rem 0;cursor:pointer;position:relative;z-index:1;transition:var(--transition);box-shadow:0 6px 30px rgba(0,255,136,.15);animation:fadeUp .8s .3s ease-out both;}}
 .server-ip-box:hover{{transform:scale(1.04);box-shadow:var(--glow-green);border-color:var(--primary);}}
 .server-ip-box .ip-text{{font-family:'Space Grotesk',monospace;font-size:1.5rem;font-weight:700;color:var(--primary);letter-spacing:1px;}}
@@ -751,204 +522,124 @@ table tbody td{{padding:.9rem 1.2rem;font-size:.92rem;color:var(--text);}}
 .msg.mine{{flex-direction:row-reverse;}}
 .msg-avatar{{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff;}}
 .msg-avatar.user-av{{background:linear-gradient(135deg,var(--secondary),var(--accent2));}}
-.msg-avatar.admin-av{{background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--dark);}}
-.msg-bubble{{max-width:72%;padding:.65rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.5;word-break:break-word;}}
-.msg.mine .msg-bubble{{background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--dark);border-bottom-right-radius:4px;box-shadow:0 3px 12px rgba(0,255,136,.25);}}
-.msg:not(.mine) .msg-bubble{{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:var(--text);border-bottom-left-radius:4px;}}
-.msg-meta{{font-size:.7rem;color:var(--text-dim);margin-top:.2rem;display:flex;align-items:center;gap:.3rem;}}
-.msg.mine .msg-meta{{justify-content:flex-end;}}
-.msg-meta .admin-tag{{color:var(--primary);font-weight:700;text-transform:uppercase;font-size:.65rem;letter-spacing:.5px;}}
-.chat-input-area{{display:flex;gap:.6rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0;}}
-.chat-input-area input{{flex-grow:1;}}
-.typing-indicator{{display:flex;align-items:center;gap:.35rem;padding:.5rem 0;color:var(--text-dim);font-size:.82rem;min-height:28px;}}
-.typing-dots{{display:flex;gap:3px;}}
-.typing-dots span{{display:block;width:6px;height:6px;background:var(--text-dim);border-radius:50%;animation:typeDot .8s ease-in-out infinite;}}
+.msg-avatar.admin-av{{background:linear-gradient(135deg,var(--primary),#10b981);}}
+.msg-bubble{{max-width:75%;padding:.75rem 1rem;border-radius:var(--radius-sm) var(--radius-sm) var(--radius-sm) 4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06);color:var(--text);font-size:.9rem;line-height:1.5;word-break:break-word;}}
+.msg.mine .msg-bubble{{border-radius:var(--radius-sm) var(--radius-sm) 4px var(--radius-sm);background:rgba(0,255,136,.08);border-color:rgba(0,255,136,.15);}}
+.msg-meta{{font-size:.68rem;color:var(--text-dim);margin-top:.25rem;display:flex;align-items:center;gap:.35rem;}}
+.admin-tag{{background:rgba(0,255,136,.12);color:var(--primary);padding:.1rem .4rem;border-radius:4px;font-weight:700;font-size:.62rem;}}
+.typing-indicator{{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;color:var(--text-dim);font-size:.82rem;}}
+.typing-dots span{{display:inline-block;width:5px;height:5px;background:var(--primary);border-radius:50%;animation:typingBounce 1.2s ease-in-out infinite;}}
 .typing-dots span:nth-child(2){{animation-delay:.15s;}}
 .typing-dots span:nth-child(3){{animation-delay:.3s;}}
-@keyframes typeDot{{0%,60%,100%{{transform:translateY(0);opacity:.4;}}30%{{transform:translateY(-4px);opacity:1;}}}}
-footer{{position:relative;z-index:2;margin-top:4rem;background:linear-gradient(180deg,var(--dark) 0%,rgba(6,10,22,.95) 100%);border-top:1px solid rgba(0,255,136,.1);padding:3rem 0 1.5rem;}}
-footer::before{{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--primary),var(--secondary),var(--accent),transparent);opacity:.4;}}
-.footer-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2.5rem;margin-bottom:2.5rem;}}
-.footer-col h4{{font-family:'Orbitron',sans-serif;font-size:.95rem;color:var(--primary);margin-bottom:1rem;font-weight:700;}}
-.footer-col p,.footer-col li{{color:var(--text-dim);font-size:.88rem;line-height:1.8;}}
-.footer-col ul{{list-style:none;}}
-.footer-col ul li a{{color:var(--text-dim);text-decoration:none;transition:var(--transition);display:inline-flex;align-items:center;gap:.3rem;}}
-.footer-col ul li a:hover{{color:var(--primary);}}
-.social-row{{display:flex;gap:.8rem;margin-top:1rem;}}
-.social-btn{{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--text-dim);font-size:1rem;text-decoration:none;transition:var(--transition);}}
-.social-btn:hover{{transform:translateY(-3px);color:#fff;}}
-.social-btn.discord:hover{{background:#5865F2;border-color:#5865F2;box-shadow:0 6px 20px rgba(88,101,242,.4);}}
-.social-btn.instagram:hover{{background:linear-gradient(135deg,#E1306C,#F77737);border-color:transparent;}}
-.social-btn.telegram:hover{{background:#0088cc;border-color:#0088cc;}}
-.social-btn.youtube:hover{{background:#FF0000;border-color:#FF0000;}}
-.footer-bottom{{text-align:center;padding-top:2rem;border-top:1px solid rgba(255,255,255,.06);color:var(--text-dim);font-size:.82rem;}}
-.music-player{{
-    position:fixed;bottom:24px;right:24px;z-index:9998;
-    width:54px;height:54px;border-radius:50%;
-    background:linear-gradient(135deg,var(--primary),var(--secondary));
-    box-shadow:0 6px 28px rgba(0,255,136,.35);
-    display:flex;align-items:center;justify-content:center;
-    cursor:pointer;transition:var(--transition);
-    border:none;outline:none;
-}}
-.music-player:hover{{transform:scale(1.12);box-shadow:0 8px 36px rgba(0,255,136,.5);}}
-.music-player i{{font-size:1.25rem;color:var(--dark);transition:var(--transition);}}
-.music-player.playing::before{{
-    content:'';position:absolute;inset:-5px;border-radius:50%;
-    border:2.5px solid var(--primary);
-    animation:ringPulse 1.6s ease-out infinite;
-}}
-@keyframes ringPulse{{0%{{transform:scale(1);opacity:.7;}}100%{{transform:scale(1.5);opacity:0;}}}}
-.music-iframe{{position:fixed;bottom:-999px;right:-999px;width:1px;height:1px;opacity:0;border:none;pointer-events:none;}}
+@keyframes typingBounce{{0%,100%{{transform:translateY(0);opacity:.4;}}50%{{transform:translateY(-4px);opacity:1;}}}}
+.chat-input-area{{display:flex;gap:.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.07);margin-top:auto;}}
+.chat-input-area input{{flex-grow:1;padding:.75rem 1rem;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);color:var(--text);font-size:.9rem;}}
+.chat-input-area input:focus{{outline:none;border-color:var(--primary);box-shadow:var(--glow-green);}}
+.music-iframe{{display:none;}}
+.music-btn{{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9998;width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px var(--primary-dim);transition:var(--transition);animation:musicFloat 3s ease-in-out infinite;}}
+.music-btn:hover{{transform:scale(1.15);box-shadow:0 6px 30px var(--primary-glow);}}
+@keyframes musicFloat{{0%,100%{{transform:translateY(0);}}50%{{transform:translateY(-5px);}}}}
+.music-btn i{{color:var(--dark);font-size:1.2rem;}}
+.music-btn.playing i{{animation:musicSpin 2s linear infinite;}}
+@keyframes musicSpin{{from{{transform:rotate(0);}}to{{transform:rotate(360deg);}}}}
+.hamburger{{display:none;flex-direction:column;gap:4px;cursor:pointer;padding:8px;z-index:10001;}}
+.hamburger span{{width:24px;height:2px;background:var(--text);border-radius:2px;transition:var(--transition);}}
 @media(max-width:768px){{
-    .hero{{padding:7rem 0 3rem;}}
+    .hamburger{{display:flex;}}
+    .nav-links{{position:fixed;top:0;right:-100%;width:70%;max-width:300px;height:100vh;background:rgba(6,10,22,.98);backdrop-filter:blur(24px);flex-direction:column;padding:5rem 2rem 2rem;gap:1rem;transition:var(--transition);box-shadow:-8px 0 40px rgba(0,0,0,.6);z-index:10000;}}
+    .nav-links.active{{right:0;}}
+    .hero{{padding:6rem 0 3rem;}}
     .glitch-text{{font-size:2.2rem;}}
-    .nav-links{{gap:.3rem;}}
-    .nav-links a{{padding:.4rem .6rem;font-size:.82rem;}}
-    .nav-links a span{{display:none;}}
+    .server-status-bar{{gap:.8rem;}}
+    .status-card{{padding:.8rem;min-width:140px;}}
     .packages{{grid-template-columns:1fr;}}
     .stats{{grid-template-columns:repeat(2,1fr);}}
-    .messages-area{{max-height:320px;}}
-    .msg-bubble{{max-width:80%;}}
-    table{{font-size:.82rem;}}
-    table thead th,table tbody td{{padding:.7rem .8rem;}}
-    .server-status-bar{{gap:.7rem;}}
-    .status-card{{flex:1 1 130px;max-width:100%;padding:.75rem .9rem;}}
-    .rank-chips{{gap:.3rem;}}
-    .rank-chip{{font-size:.53rem;padding:.22rem .55rem;}}
 }}
-@media(max-width:480px){{
-    .stats{{grid-template-columns:1fr 1fr;}}
-    .status-card{{flex:1 1 100%;}}
-}}
+footer{{position:relative;z-index:2;text-align:center;padding:3rem 0;margin-top:4rem;border-top:1px solid rgba(0,255,136,.1);background:rgba(6,10,22,.6);}}
+footer p{{color:var(--text-dim);font-size:.85rem;}}
+footer a{{color:var(--primary);text-decoration:none;font-weight:600;}}
 </style>
 </head>
 <body>
-
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-
+<div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
 {music_iframe_html}
-
-<button class="music-player {music_playing_class}" id="musicToggleBtn" onclick="toggleMusic()" title="Musiqa">
-    <i class="fas fa-music" id="musicIcon"></i>
-</button>
-
+{dog_sound_html}
 <nav>
-<div class="container">
-    <a href="/" class="logo"><span class="logo-icon">⚔️</span> EliteMC</a>
-    <ul class="nav-links">
-        <li><a href="/"><i class="fas fa-home"></i> <span>Asosiy</span></a></li>
-        <li><a href="/news"><i class="fas fa-newspaper"></i> <span>Yangiliklar</span></a></li>
-        <li><a href="/shop"><i class="fas fa-shopping-cart"></i> <span>Do'kon</span></a></li>
-        {nav_user}
-    </ul>
-</div>
-</nav>
-
-<main>{body_content}</main>
-
-<footer>
-<div class="container">
-    <div class="footer-grid">
-        <div class="footer-col">
-            <h4>⚔️ EliteMC.uz</h4>
-            <p>O'zbekistonning eng yaxshi Minecraft serveri.</p>
-            <p style="margin-top:.6rem;"><strong style="color:var(--text);">Server IP:</strong> {server_ip}</p>
+    <div class="container">
+        <a href="/" class="logo"><span class="logo-icon">⚡</span>EliteMC</a>
+        <div class="hamburger" onclick="this.classList.toggle('open');document.querySelector('.nav-links').classList.toggle('active');">
+            <span></span><span></span><span></span>
         </div>
-        <div class="footer-col">
-            <h4>🔗 Sahifalar</h4>
-            <ul>
-                <li><a href="/"><i class="fas fa-home"></i> Bosh sahifa</a></li>
-                <li><a href="/shop"><i class="fas fa-shopping-cart"></i> Do'kon</a></li>
-                <li><a href="/support"><i class="fas fa-headset"></i> Support</a></li>
-                <li><a href="/register"><i class="fas fa-user-plus"></i> Ro'yxatdan o'tish</a></li>
-            </ul>
-        </div>
-        <div class="footer-col">
-            <h4>📱 Ijtimoiy Tarmoqlar</h4>
-            <div class="social-row">
-                <a href="{settings.get('discord_link', '#')}" class="social-btn discord" target="_blank"><i class="fab fa-discord"></i></a>
-                <a href="{settings.get('instagram_link', '#')}" class="social-btn instagram" target="_blank"><i class="fab fa-instagram"></i></a>
-                <a href="{settings.get('telegram_link', '#')}" class="social-btn telegram" target="_blank"><i class="fab fa-telegram"></i></a>
-                <a href="{settings.get('youtube_link', '#')}" class="social-btn youtube" target="_blank"><i class="fab fa-youtube"></i></a>
-            </div>
-        </div>
+        <ul class="nav-links">
+            <li><a href="/"><i class="fas fa-home"></i> <span>Bosh Sahifa</span></a></li>
+            <li><a href="/shop"><i class="fas fa-shopping-cart"></i> <span>Do'kon</span></a></li>
+            <li><a href="/news"><i class="fas fa-newspaper"></i> <span>Yangiliklar</span></a></li>
+            {nav_user}
+        </ul>
     </div>
-    <div class="footer-bottom"><p>© 2026 EliteMC.uz — Barcha huquqlar himoyalangan.</p></div>
-</div>
+</nav>
+<main>{body_content}</main>
+<footer>
+    <div class="container">
+        <p>© 2024 <a href="/">EliteMC</a> — Uzbekistandagi N1 Minecraft Server</p>
+        <p style="margin-top:.5rem;font-size:.78rem;">Server IP: <strong style="color:var(--primary);">{server_ip}</strong></p>
+    </div>
 </footer>
-
-<div id="toastRoot"></div>
-
+<button class="music-btn {music_playing_class}" id="musicBtn" onclick="toggleMusic()">
+    <i class="fas fa-music"></i>
+</button>
 <script>
-document.addEventListener('DOMContentLoaded', () => {{
-    document.querySelectorAll('a').forEach(link => {{
-        link.addEventListener('click', function(e) {{
-            const href = this.getAttribute('href');
-            if (href && href.startsWith('/') && !href.startsWith('#') && this.target !== '_blank') {{
-                e.preventDefault();
-                document.body.classList.add('page-transitioning');
-                setTimeout(() => {{ window.location.href = href; }}, 350);
-            }}
-        }});
-    }});
-}});
-
-// ─── Music ───
-let _musicPlaying = {music_init_js};
-let _musicSrc = '{music_url}';
+let musicPlaying = {music_init_js};
 function toggleMusic() {{
-    const btn = document.getElementById('musicToggleBtn');
-    const icon = document.getElementById('musicIcon');
     const iframe = document.getElementById('musicIframe');
-    _musicPlaying = !_musicPlaying;
-    if (_musicPlaying) {{
-        btn.classList.add('playing');
-        icon.classList.replace('fa-volume-xmark','fa-music');
-        if (iframe) iframe.src = _musicSrc;
-    }} else {{
+    const btn = document.getElementById('musicBtn');
+    if (!iframe) return;
+    if (musicPlaying) {{
+        iframe.src = '';
         btn.classList.remove('playing');
-        icon.classList.replace('fa-music','fa-volume-xmark');
-        if (iframe) iframe.src = '';
+    }} else {{
+        iframe.src = '{music_url}';
+        btn.classList.add('playing');
     }}
+    musicPlaying = !musicPlaying;
 }}
-
-// ─── Toast ───
-let _toastTimer=null;
-function showToast(msg,type='success'){{
-    if(_toastTimer) clearTimeout(_toastTimer);
-    const el=document.getElementById('toastRoot');
-    const ic=type==='success'?'fa-check-circle':'fa-exclamation-circle';
-    el.innerHTML=`<div class="toast ${{type}}"><i class="fas ${{ic}}"></i><span>${{msg}}</span></div>`;
-    _toastTimer=setTimeout(()=>{{ const t=el.querySelector('.toast'); if(t){{t.classList.add('hide');setTimeout(()=>el.innerHTML='',350);}} }},3200);
+function showToast(msg, type='success') {{
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    const t = document.createElement('div');
+    t.className = 'toast ' + type;
+    t.innerHTML = '<i class="fas fa-' + (type === 'success' ? 'check-circle' : 'exclamation-circle') + '"></i><span>' + msg + '</span>';
+    document.body.appendChild(t);
+    setTimeout(() => {{ t.classList.add('hide'); setTimeout(() => t.remove(), 400); }}, 3500);
 }}
+function copyIP() {{
+    navigator.clipboard.writeText('{server_ip}').then(() => showToast('IP nusxalandi!'));
+}}
+document.querySelectorAll('.server-ip-box').forEach(b => b.addEventListener('click', copyIP));
 
-// ─── Copy IP ───
-document.querySelectorAll('.server-ip-box').forEach(el=>{{
-    el.addEventListener('click',()=>navigator.clipboard.writeText(el.querySelector('.ip-text').textContent.trim()).then(()=>showToast('Server IP nusxalandi! ✅')));
-}});
-
-// ─── AJAX form ───
-async function ajaxForm(fid,url){{
-    const form=document.getElementById(fid);
-    if(!form) return;
-    form.addEventListener('submit',async e=>{{
+function ajaxForm(formId, url) {{
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {{
         e.preventDefault();
-        const d=Object.fromEntries(new FormData(form));
-        try{{
-            const r=await fetch(url,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(d)}});
-            const j=await r.json();
-            showToast(j.message,j.success?'success':'error');
-            if(j.success&&j.redirect) setTimeout(()=>window.location.href=j.redirect,1400);
-        }}catch(e){{showToast('Xatolik yuz berdi!','error');}}
+        const data = Object.fromEntries(new FormData(form));
+        try {{
+            const r = await fetch(url, {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify(data)
+            }});
+            const j = await r.json();
+            showToast(j.message, j.success ? 'success' : 'error');
+            if (j.success && j.redirect) setTimeout(() => window.location.href = j.redirect, 1500);
+        }} catch (err) {{
+            showToast("Xatolik yuz berdi", 'error');
+        }}
     }});
 }}
 ajaxForm('loginForm','/login');
 ajaxForm('registerForm','/register');
 
-// ─── File preview ───
 document.querySelectorAll('input[type=file]').forEach(inp=>{{
     inp.addEventListener('change',function(e){{
         const f=e.target.files[0];
@@ -967,14 +658,10 @@ document.querySelectorAll('input[type=file]').forEach(inp=>{{
     }});
 }});
 
-// ─── BUY FUNCTIONS (YANGILANGAN) ───
-
-// 1. Rank/Key olish (Nik so'raydi)
 async function buyRank(pkgId){{
     const nick = prompt("Qaysi nikga sotib olmoqchisiz?");
     if(!nick) return;
     if(!confirm(nick + " uchun ushbu narsani sotib olasizmi?")) return;
-
     try{{
         const r=await fetch('/buy_rank/'+pkgId, {{
             method:'POST',
@@ -987,7 +674,6 @@ async function buyRank(pkgId){{
     }}catch(e){{showToast('Xatolik!','error');}}
 }}
 
-// 2. Token narxini hisoblash
 function calcTokenPrice() {{
     const el = document.getElementById('tokenAmount');
     if(!el) return;
@@ -996,13 +682,10 @@ function calcTokenPrice() {{
     document.getElementById('tokenPriceDisplay').innerText = price.toLocaleString() + " so'm";
 }}
 
-// 3. Token olish (Custom)
 async function buyCustomTokens() {{
     const amount = document.getElementById('tokenAmount').value;
     const nick = prompt("Tokenlar qaysi nikga berilsin?");
-
     if(!amount || !nick) return showToast("Nik va summani kiriting!", "error");
-
     try {{
         const r = await fetch('/buy_token_custom', {{
             method: 'POST',
@@ -1015,7 +698,6 @@ async function buyCustomTokens() {{
     }} catch(e) {{ showToast('Xatolik!', 'error'); }}
 }}
 
-// ─── ADMIN ACTIONS ───
 async function approveDeposit(id){{
     const c=prompt('Izoh (ixtiyoriy):')||'';
     try{{
@@ -1042,18 +724,6 @@ async function saveSettings(){{
     }}catch(e){{showToast('Xatolik!','error');}}
 }}
 
-# ... (yuqoridagi kodlar: approveDeposit, rejectDeposit va saveSettings funksiyalari)
-
-async function saveSettings(){{
-    const form=document.getElementById('settingsForm');
-    const d=Object.fromEntries(new FormData(form));
-    try{{
-        const r=await fetch('/admin/settings',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(d)}});
-        const j=await r.json(); showToast(j.message,j.success?'success':'error');
-    }}catch(e){{showToast('Xatolik!','error');}}
-}}
-
-// ─── YANGILIK QO'SHISH (YANGI KOD) ───
 const _newsForm = document.getElementById('addNewsForm');
 if (_newsForm) {{
     _newsForm.addEventListener('submit', async (e) => {{
@@ -1077,6 +747,7 @@ if (_newsForm) {{
 </body>
 </html>'''
 
+
 # ═══════════════════════════════════════════════
 # INDEX
 # ═══════════════════════════════════════════════
@@ -1089,14 +760,11 @@ def index():
     total_users = conn.execute('SELECT COUNT(*) as c FROM users WHERE is_admin=0').fetchone()['c']
     total_purchases = conn.execute('SELECT COUNT(*) as c FROM purchases').fetchone()['c']
     total_revenue = conn.execute('SELECT COALESCE(SUM(amount),0) as s FROM purchases').fetchone()['s']
-    ranks = conn.execute(
-        "SELECT DISTINCT name, color FROM packages WHERE category='anarchy' AND is_active=1").fetchall()
+    ranks = conn.execute("SELECT DISTINCT name, color FROM packages WHERE category='anarchy' AND is_active=1").fetchall()
     conn.close()
 
-    # AVTOMATIK ONLINE TEKSHIRISH
     server_ip = settings.get('server_ip', 'elitemc.uz')
     real_online = get_real_online(server_ip)
-    # Agar server ochib qolsa bazadagi eski raqamni yoki 0 ni oladi
     display_online = real_online if real_online is not None else settings.get('online_players', '0')
 
     trailer_html = ''
@@ -1208,7 +876,6 @@ def add_news():
     if not title or not content:
         return jsonify(success=False, message="Sarlavha va matn talab qilinadi!")
 
-    # Rasm yuklash
     if 'image' in request.files:
         file = request.files['image']
         if file and file.filename and allowed_file(file.filename):
@@ -1216,53 +883,29 @@ def add_news():
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             name, ext = os.path.splitext(filename)
             unique_filename = f"{name}_{timestamp}{ext}"
-
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             file.save(filepath)
-
             image_url = f"/static/uploads/{unique_filename}"
 
     try:
-        import json
-
-        news_file = "news.json"
-
-        # Oldingi news yuklash
-        try:
-            with open(news_file, "r", encoding="utf-8") as f:
-                news_list = json.load(f)
-        except:
-            news_list = []
-
-        # Yangi news qo‘shish
-        news_list.append({
-            "title": title,
-            "content": content,
-            "image": image_url,
-            "time": datetime.datetime.now().isoformat()
-        })
-
-        # Saqlash
-        with open(news_file, "w", encoding="utf-8") as f:
-            json.dump(news_list, f, indent=4, ensure_ascii=False)
-
-        return jsonify(success=True, message="Yangilik muvaffaqiyatli qo‘shildi!")
-
+        conn = get_db()
+        conn.execute('INSERT INTO news (title, content, image) VALUES (?, ?, ?)',
+                     (title, content, image_url))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, message="Yangilik muvaffaqiyatli qo'shildi!")
     except Exception as e:
         return jsonify(success=False, message=f"Xatolik: {str(e)}")
-
 
 
 @app.route('/admin/news/delete/<int:nid>', methods=['POST'])
 @admin_required
 def delete_news(nid):
-    # BU YERDA HAM SURILISHI KERAK
     conn = get_db()
     conn.execute('DELETE FROM news WHERE id=?', (nid,))
     conn.commit()
     conn.close()
     return jsonify(success=True, message="Yangilik o'chirildi!")
-
 
 
 # ═══════════════════════════════════════════════
@@ -1275,7 +918,6 @@ def register():
         data = request.get_json(force=True, silent=True) or {}
         username = sanitize(data.get('username', ''))
         email = sanitize(data.get('email', ''))
-        # .encode() va hexdigest() to'g'ri ishlashi uchun hashlib import qilingan bo'lishi kerak
         password = hashlib.sha256(data.get('password', '').encode()).hexdigest()
         minecraft_nick = sanitize(data.get('minecraft_nick', ''))
 
@@ -1289,7 +931,6 @@ def register():
         except sqlite3.IntegrityError:
             return jsonify(success=False, message='Bu username yoki email allaqachon mavjud!')
 
-    # GET so'rovi uchun qism (if dan tashqarida, lekin funksiya ichida)
     content = '''
     <div class="container" style="max-width:480px;margin:6rem auto 4rem;">
         <div class="card">
@@ -1382,7 +1023,7 @@ def shop():
         if cat in categories:
             categories[cat].append(dict(p))
         elif cat == 'token':
-            pass  # Token alohida chiqadi
+            pass
         else:
             if 'anarchy' not in categories: categories['anarchy'] = []
             categories['anarchy'].append(dict(p))
@@ -1427,7 +1068,6 @@ def shop():
     html_keys = generate_html(categories['keys'])
     html_services = generate_html(categories['services'])
 
-    # TOKEN KALKULYATORI
     html_token = '''
     <div class="card" style="grid-column: 1 / -1; max-width: 600px; margin: 0 auto; border-color: #fbbf24;">
         <div class="card-header"><i class="fas fa-coins" style="color:#fbbf24;"></i><h2>Token Sotib Olish</h2></div>
@@ -1493,7 +1133,6 @@ def shop():
 @app.route('/buy_rank/<int:package_id>', methods=['POST'])
 @login_required
 def buy_rank(package_id):
-    # Frontdan nikni olamiz
     data = request.get_json(force=True, silent=True) or {}
     custom_nick = data.get('nick')
 
@@ -1513,7 +1152,6 @@ def buy_rank(package_id):
         conn.close()
         return jsonify(success=False, message="Mablag' yetarli emas!")
 
-    # Nikni yangilaymiz
     nick = custom_nick
     new_bal = user['balance'] - pkg['price']
 
@@ -1532,7 +1170,7 @@ def buy_rank(package_id):
 
 
 # ═══════════════════════════════════════════════
-# BALANCE
+# RULES
 # ═══════════════════════════════════════════════
 
 @app.route('/rules')
@@ -1593,6 +1231,10 @@ def rules():
     return render_page(content, logged_in='user_id' in session, is_admin=session.get('is_admin', False))
 
 
+# ═══════════════════════════════════════════════
+# BALANCE
+# ═══════════════════════════════════════════════
+
 @app.route('/balance')
 @login_required
 def balance():
@@ -1652,7 +1294,7 @@ def deposit_balance():
     conn.execute(
         'INSERT INTO balance_deposits (user_id,amount,card_number,transaction_id,screenshot) VALUES (?,?,?,?,?)',
         (session['user_id'], amount, card_number, transaction_id, screenshot))
-    conn.commit();
+    conn.commit()
     conn.close()
     return redirect(url_for('balance'))
 
@@ -1660,7 +1302,6 @@ def deposit_balance():
 # ═══════════════════════════════════════════════
 # PROFILE
 # ═══════════════════════════════════════════════
-
 
 @app.route('/profile')
 @login_required
@@ -1752,7 +1393,7 @@ def new_ticket():
         ticket_id = conn.execute('SELECT last_insert_rowid() as id').fetchone()['id']
         conn.execute('INSERT INTO support_messages (ticket_id,user_id,message) VALUES (?,?,?)',
                      (ticket_id, session['user_id'], message))
-        conn.commit();
+        conn.commit()
         conn.close()
         return redirect(url_for('view_ticket', ticket_id=ticket_id))
     content = '''
@@ -1785,7 +1426,7 @@ def view_ticket(ticket_id):
         conn.commit()
     ticket = conn.execute('SELECT * FROM support_tickets WHERE id=?', (ticket_id,)).fetchone()
     if not ticket or (ticket['user_id'] != session['user_id'] and not session.get('is_admin')):
-        conn.close();
+        conn.close()
         return redirect(url_for('support'))
     messages = conn.execute(
         'SELECT sm.*, u.username FROM support_messages sm JOIN users u ON sm.user_id=u.id WHERE ticket_id=? ORDER BY sm.created_at ASC',
@@ -1869,13 +1510,13 @@ def send_support_message(ticket_id):
     conn = get_db()
     ticket = conn.execute('SELECT * FROM support_tickets WHERE id=?', (ticket_id,)).fetchone()
     if not ticket or (ticket['user_id'] != session['user_id'] and not session.get('is_admin')):
-        conn.close();
+        conn.close()
         return jsonify(success=False, message='Ruxsat yo\'q!')
     is_admin = 1 if session.get('is_admin') else 0
     conn.execute('INSERT INTO support_messages (ticket_id,user_id,message,is_admin_reply) VALUES (?,?,?,?)',
                  (ticket_id, session['user_id'], message, is_admin))
     conn.execute('UPDATE support_tickets SET status=? WHERE id=?', ('answered' if is_admin else 'open', ticket_id))
-    conn.commit();
+    conn.commit()
     conn.close()
     return jsonify(success=True)
 
@@ -1917,7 +1558,6 @@ def buy_token_custom():
         if not nick:
             return jsonify(success=False, message="Nik kiritilmadi!")
 
-        # KURS: 1 Token = 1.2 so'm
         price = amount * 1.2
 
         conn = get_db()
@@ -1927,7 +1567,6 @@ def buy_token_custom():
             conn.close()
             return jsonify(success=False, message=f"Mablag' yetarli emas! {price:,.0f} so'm kerak.")
 
-        # RCON COMMAND
         cmd = f"playerpoints give {nick} {amount}"
 
         if MCRCON_AVAILABLE:
@@ -1952,79 +1591,80 @@ def buy_token_custom():
 
 
 # ═══════════════════════════════════════════════
-# ADMIN
+# ADMIN - PROFESSIONAL RANK MANAGEMENT (YANGILANGAN)
 # ═══════════════════════════════════════════════
 
-
-# ═══════════════════════════════════════════════
-# ADMIN - RANKLARNI BOSHQARISH (PROFESSIONAL)
-# ═══════════════════════════════════════════════
 @app.route('/admin/ranks')
 @admin_required
 def admin_ranks():
-    """Ranklarni boshqarish - Professional modal bilan"""
+    """Ultra Professional Rank Management System with Advanced Features"""
     content = """
-    <div class="container">
+    <div class="container" style="padding-top:2rem;">
+        <div class="section-title"><h2>👑 Professional Rank Management System</h2></div>
+
+        <div style="display:flex;gap:1rem;margin-bottom:2rem;flex-wrap:wrap;">
+            <button onclick="showAddModal()" class="btn btn-primary">
+                <i class="fas fa-plus-circle"></i> Yangi Rank Qo'shish
+            </button>
+            <button onclick="bulkActivate()" class="btn btn-secondary">
+                <i class="fas fa-check-double"></i> Barchasini Aktivlash
+            </button>
+            <button onclick="bulkDeactivate()" class="btn btn-outline">
+                <i class="fas fa-ban"></i> Barchasini O'chirish
+            </button>
+            <button onclick="exportRanks()" class="btn btn-outline">
+                <i class="fas fa-download"></i> Export JSON
+            </button>
+        </div>
+
         <div class="card">
             <div class="card-header">
-                <i class="fas fa-crown"></i>
-                <h2>Ranklarni Boshqarish</h2>
+                <i class="fas fa-filter"></i>
+                <h2>Filter & Search</h2>
             </div>
-            <p style="color:var(--text-dim);margin-bottom:1.5rem">
-                Ranklarni kategoriyalar bo'yicha boshqaring
-            </p>
-
-            <button onclick="showAddModal()" class="btn" style="margin-bottom:2rem">
-                <i class="fas fa-plus-circle"></i> Yangi Rank
-            </button>
-            <form id="addNewsForm">
-    <div class="form-group">
-        <label>Sarlavha</label>
-        <input type="text" name="title" required placeholder="Yangilik nomi...">
-    </div>
-    <div class="form-group">
-        <label>Rasm (Ixtiyoriy)</label>
-        <div class="file-upload">
-            <input type="file" name="image" accept="image/*">
-            <div class="file-upload-label">
-                <i class="fas fa-image"></i>
-                <p>Rasmni tanlang</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem;">
+                <input type="text" id="searchBox" placeholder="Qidiruv..." oninput="filterRanks()" style="padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
+                <select id="categoryFilter" onchange="filterRanks()" style="padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
+                    <option value="">Barcha Kategoriyalar</option>
+                    <option value="anarchy">⚔️ Anarxiya</option>
+                    <option value="smp">🌲 SMP</option>
+                    <option value="keys">🔑 Kalitlar</option>
+                    <option value="services">🛠️ Xizmatlar</option>
+                    <option value="token">🪙 Tokenlar</option>
+                </select>
+                <select id="statusFilter" onchange="filterRanks()" style="padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
+                    <option value="">Barcha Statuslar</option>
+                    <option value="1">✅ Aktiv</option>
+                    <option value="0">❌ Nofaol</option>
+                </select>
             </div>
         </div>
-        <div class="image-preview-container" style="margin-top:10px;"></div> 
-    </div>
-    <div class="form-group">
-        <label>Matn</label>
-        <textarea name="content" required placeholder="Batafsil..."></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary btn-full">Chiqarish</button>
-</form>
 
-            <div id="ranksContainer"></div>
-        </div>
+        <div id="ranksContainer"></div>
     </div>
 
-    <div id="rankModal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalTitle"><i class="fas fa-crown"></i> Yangi Rank</h2>
-                <button onclick="closeModal()" class="modal-close">
+    <!-- Ultra Professional Modal -->
+    <div id="rankModal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);backdrop-filter:blur(10px);z-index:10000;padding:2rem;overflow-y:auto;">
+        <div style="max-width:800px;margin:0 auto;background:var(--bg-secondary);border-radius:20px;border:2px solid var(--primary);box-shadow:0 20px 60px rgba(0,255,136,0.3);">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:2rem;border-bottom:2px solid var(--border);">
+                <h2 id="modalTitle" style="color:var(--primary);font-family:'Orbitron',sans-serif;"><i class="fas fa-crown"></i> Yangi Rank</h2>
+                <button onclick="closeModal()" style="background:none;border:none;color:var(--danger);font-size:1.5rem;cursor:pointer;padding:0.5rem;border-radius:8px;transition:all 0.3s;">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
 
-            <form id="rankForm" onsubmit="return handleSubmit(event)">
+            <form id="rankForm" onsubmit="return handleSubmit(event)" style="padding:2rem;">
                 <input type="hidden" id="rankId">
 
-                <div class="form-row">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
                     <div class="form-group">
                         <label><i class="fas fa-tag"></i> Rank Nomi *</label>
-                        <input type="text" id="rankName" required placeholder="VIP, Premium...">
+                        <input type="text" id="rankName" required placeholder="VIP, Premium..." style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                     </div>
 
                     <div class="form-group">
                         <label><i class="fas fa-folder"></i> Kategoriya *</label>
-                        <select id="rankCategory" required>
+                        <select id="rankCategory" required style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                             <option value="">Tanlang...</option>
                             <option value="anarchy">⚔️ Anarxiya</option>
                             <option value="smp">🌲 SMP</option>
@@ -2035,245 +1675,57 @@ def admin_ranks():
                     </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom:1.5rem;">
                     <label><i class="fas fa-align-left"></i> Tavsif</label>
-                    <textarea id="rankDesc" rows="2" placeholder="Qisqacha tavsif..."></textarea>
+                    <textarea id="rankDesc" rows="3" placeholder="Rank haqida qisqacha ma'lumot..." style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);resize:vertical;"></textarea>
                 </div>
 
-                <div class="form-row">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
                     <div class="form-group">
                         <label><i class="fas fa-money-bill-wave"></i> Narxi (so'm) *</label>
-                        <input type="number" id="rankPrice" required placeholder="10000">
+                        <input type="number" id="rankPrice" required placeholder="10000" min="0" style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                     </div>
 
                     <div class="form-group">
                         <label><i class="fas fa-clock"></i> Davomiyligi *</label>
-                        <input type="text" id="rankDuration" required placeholder="30 kun, UMRBOQIY">
+                        <input type="text" id="rankDuration" required placeholder="30 kun, 90 kun, UMRBOT" style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label><i class="fas fa-list-check"></i> Imkoniyatlar <small>(vergul bilan)</small></label>
-                    <textarea id="rankFeatures" rows="3" placeholder="Kit access, Fly, /home 5"></textarea>
+                <div class="form-group" style="margin-bottom:1.5rem;">
+                    <label><i class="fas fa-list-check"></i> Imkoniyatlar <small style="color:var(--text-dim);">(vergul bilan ajrating)</small></label>
+                    <textarea id="rankFeatures" rows="3" placeholder="/fly, /feed, Kit Premium" style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);resize:vertical;"></textarea>
                 </div>
 
-                <div class="form-row">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:2rem;">
                     <div class="form-group">
                         <label><i class="fas fa-palette"></i> Rang *</label>
-                        <div style="display:flex;gap:0.5rem;align-items:center">
-                            <input type="color" id="rankColorPicker" value="#3b82f6" style="width:50px;height:40px;border:2px solid var(--border);border-radius:8px;cursor:pointer;background:none">
-                            <input type="text" id="rankColor" value="#3b82f6" placeholder="#3b82f6" style="flex:1">
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            <input type="color" id="rankColorPicker" value="#3b82f6" style="width:50px;height:40px;border:2px solid var(--border);border-radius:8px;cursor:pointer;">
+                            <input type="text" id="rankColor" value="#3b82f6" placeholder="#3b82f6" pattern="^#[0-9A-Fa-f]{6}$" style="flex:1;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label><i class="fas fa-toggle-on"></i> Holat</label>
-                        <select id="rankActive">
+                        <select id="rankActive" style="width:100%;padding:0.8rem;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,0.05);color:var(--text);">
                             <option value="1">✅ Aktiv</option>
                             <option value="0">❌ Nofaol</option>
                         </select>
                     </div>
                 </div>
 
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">
+                <div style="display:flex;gap:1rem;padding-top:1.5rem;border-top:2px solid var(--border);">
+                    <button type="submit" class="btn btn-primary" style="flex:1;">
                         <i class="fas fa-save"></i> Saqlash
                     </button>
-                    <button type="button" onclick="closeModal()" class="btn btn-secondary">
+                    <button type="button" onclick="closeModal()" class="btn btn-outline" style="flex:1;">
                         <i class="fas fa-times"></i> Bekor qilish
                     </button>
                 </div>
             </form>
         </div>
     </div>
-
-    <style>
-    .modal-overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.85);
-        backdrop-filter: blur(5px);
-        z-index: 9999;
-        padding: 2rem;
-        overflow-y: auto;
-        animation: fadeIn 0.3s;
-    }
-    .modal-overlay.active {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    @keyframes fadeIn {
-        from {opacity: 0;}
-        to {opacity: 1;}
-    }
-    .modal-content {
-        background: var(--bg-secondary);
-        border-radius: 16px;
-        max-width: 700px;
-        width: 100%;
-        border: 2px solid var(--accent);
-        box-shadow: 0 20px 60px rgba(0, 217, 255, 0.4);
-        animation: slideUp 0.3s;
-        max-height: 90vh;
-        overflow-y: auto;
-    }
-
-    @keyframes slideUp {
-        from {transform: translateY(50px); opacity: 0;}
-        to {transform: translateY(0); opacity: 1;}
-    }
-    .modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1.5rem 2rem;
-        border-bottom: 2px solid var(--border);
-        background: linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(168, 85, 247, 0.1));
-    }
-    .modal-header h2 {
-        color: var(--accent);
-        font-family: 'Orbitron', sans-serif;
-        font-size: 1.5rem;
-        margin: 0;
-    }
-    .modal-close {
-        background: none;
-        border: none;
-        color: var(--text);
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 0.5rem;
-        transition: all 0.3s;
-        border-radius: 8px;
-    }
-    .modal-close:hover {
-        background: rgba(239, 68, 68, 0.2);
-        color: #ef4444;
-    }
-    .modal-content form {
-        padding: 2rem;
-    }
-    .modal-footer {
-        display: flex;
-        gap: 1rem;
-        margin-top: 2rem;
-        padding-top: 1.5rem;
-        border-top: 2px solid var(--border);
-    }
-    .modal-footer .btn {
-        flex: 1;
-    }
-    .btn-secondary {
-        background: rgba(100, 100, 100, 0.3);
-        border: 1px solid rgba(200, 200, 200, 0.2);
-    }
-    .btn-secondary:hover {
-        background: rgba(100, 100, 100, 0.5);
-    }
-    .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-
-    .rank-category {
-        margin-bottom: 2.5rem;
-        padding: 2rem;
-        background: linear-gradient(135deg, rgba(0, 217, 255, 0.05), rgba(168, 85, 247, 0.05));
-        border-radius: 16px;
-        border: 1px solid var(--border);
-    }
-    .rank-category h3 {
-        color: var(--accent);
-        margin-bottom: 1.5rem;
-        font-size: 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        font-family: 'Orbitron', sans-serif;
-    }
-    .rank-group {
-        background: var(--card-bg);
-        border: 2px solid var(--border);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        transition: all 0.3s;
-    }
-    .rank-group:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 30px rgba(0, 217, 255, 0.2);
-        border-color: var(--accent);
-    }
-    .rank-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 1rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid var(--border);
-    }
-    .rank-title {
-        font-size: 1.8rem;
-        font-weight: 700;
-        font-family: 'Orbitron', sans-serif;
-    }
-    .variant-list {
-        display: grid;
-        gap: 0.8rem;
-        margin-top: 1rem;
-    }
-    .variant-item {
-        background: rgba(0, 217, 255, 0.05);
-        padding: 1rem 1.5rem;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: all 0.3s;
-    }
-    .variant-item:hover {
-        background: rgba(0, 217, 255, 0.1);
-        border-color: var(--accent);
-        transform: translateX(5px);
-    }
-    .variant-info {
-        display: flex;
-        gap: 2rem;
-        align-items: center;
-        flex: 1;
-    }
-    .variant-duration {
-        font-weight: 600;
-        color: var(--accent);
-        min-width: 120px;
-    }
-    .variant-price {
-        font-weight: 700;
-        font-size: 1.3rem;
-    }
-    .variant-badge {
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-    .variant-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-    .btn-icon {
-        padding: 0.6rem 0.9rem;
-        min-width: auto;
-    }
-    </style>
 
     <script>
     const categoryNames = {
@@ -2287,7 +1739,6 @@ def admin_ranks():
     let allPackages = [];
     let editMode = false;
 
-    // Rang sinxronizatsiyasi
     document.getElementById('rankColorPicker').addEventListener('input', (e) => {
         document.getElementById('rankColor').value = e.target.value;
     });
@@ -2301,10 +1752,23 @@ def admin_ranks():
     async function loadRanks() {
         const res = await fetch('/api/packages');
         allPackages = await res.json();
+        renderRanks();
+    }
 
-        // Guruhlantirilgan ko'rinish
+    function renderRanks() {
+        const search = document.getElementById('searchBox').value.toLowerCase();
+        const catFilter = document.getElementById('categoryFilter').value;
+        const statusFilter = document.getElementById('statusFilter').value;
+
+        let filtered = allPackages.filter(pkg => {
+            const matchSearch = !search || pkg.name.toLowerCase().includes(search) || (pkg.description && pkg.description.toLowerCase().includes(search));
+            const matchCat = !catFilter || pkg.category === catFilter;
+            const matchStatus = statusFilter === '' || pkg.is_active == statusFilter;
+            return matchSearch && matchCat && matchStatus;
+        });
+
         const categories = {};
-        allPackages.forEach(pkg => {
+        filtered.forEach(pkg => {
             if (!categories[pkg.category]) categories[pkg.category] = {};
             if (!categories[pkg.category][pkg.name]) categories[pkg.category][pkg.name] = [];
             categories[pkg.category][pkg.name].push(pkg);
@@ -2319,26 +1783,28 @@ def admin_ranks():
             const totalVariants = Object.values(ranks).flat().length;
 
             html += `
-            <div class="rank-category">
-                <h3>
-                    ${catName}
-                    <span style="color:var(--text-dim);font-size:0.9rem;font-weight:400;margin-left:auto">
+            <div class="card" style="margin-bottom:2rem;border-left:4px solid var(--primary);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+                    <h3 style="color:var(--primary);font-family:'Orbitron',sans-serif;font-size:1.5rem;">
+                        ${catName}
+                    </h3>
+                    <span style="color:var(--text-dim);font-size:0.9rem;">
                         ${totalRanks} rank • ${totalVariants} variant
                     </span>
-                </h3>`;
+                </div>`;
 
             for (const [rankName, variants] of Object.entries(ranks)) {
                 const baseRank = variants[0];
                 const features = baseRank.features ? baseRank.features.split(',') : [];
 
                 html += `
-                <div class="rank-group" style="border-color: ${baseRank.color}">
-                    <div class="rank-header">
-                        <div style="flex:1">
-                            <div class="rank-title" style="color: ${baseRank.color}">
+                <div style="border:2px solid ${baseRank.color};border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;background:rgba(0,0,0,0.2);">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:1rem;">
+                        <div style="flex:1;">
+                            <div style="font-size:1.8rem;font-weight:900;color:${baseRank.color};font-family:'Orbitron',sans-serif;">
                                 ${rankName}
                             </div>
-                            <p style="color:var(--text-dim);font-size:0.9rem;margin:0.5rem 0 0 0">
+                            <p style="color:var(--text-dim);font-size:0.9rem;margin:0.5rem 0 0 0;">
                                 ${baseRank.description || 'Tavsif kiritilmagan'}
                             </p>
                         </div>
@@ -2346,13 +1812,13 @@ def admin_ranks():
 
                 if (features.length > 0) {
                     html += `
-                    <div style="margin-bottom:1rem">
-                        <strong style="color:var(--accent);font-size:0.85rem;text-transform:uppercase;letter-spacing:1px">
+                    <div style="margin-bottom:1rem;">
+                        <strong style="color:var(--accent);font-size:0.85rem;text-transform:uppercase;letter-spacing:1px;">
                             <i class="fas fa-star"></i> Imkoniyatlar:
                         </strong>
-                        <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem">
+                        <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;">
                             ${features.map(f => `
-                                <span style="background:rgba(34,197,94,0.2);color:#22c55e;padding:0.3rem 0.8rem;border-radius:20px;font-size:0.8rem;border:1px solid #22c55e">
+                                <span style="background:rgba(34,197,94,0.2);color:#22c55e;padding:0.3rem 0.8rem;border-radius:20px;font-size:0.8rem;border:1px solid #22c55e;">
                                     <i class="fas fa-check"></i> ${f.trim()}
                                 </span>
                             `).join('')}
@@ -2360,29 +1826,32 @@ def admin_ranks():
                     </div>`;
                 }
 
-                html += `<div class="variant-list">`;
+                html += `<div style="display:grid;gap:0.8rem;margin-top:1rem;">`;
 
                 variants.forEach(variant => {
-                    const statusClass = variant.is_active ? 'badge-success' : 'badge-failed';
+                    const statusClass = variant.is_active ? 'badge-success' : 'badge-danger';
                     const statusText = variant.is_active ? '✅ Aktiv' : '❌ Nofaol';
 
                     html += `
-                    <div class="variant-item">
-                        <div class="variant-info">
-                            <div class="variant-duration">
+                    <div style="background:rgba(0,217,255,0.05);padding:1rem 1.5rem;border-radius:8px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                        <div style="display:flex;gap:2rem;align-items:center;flex:1;">
+                            <div style="font-weight:600;color:var(--accent);min-width:120px;">
                                 <i class="fas fa-clock"></i> ${variant.duration}
                             </div>
-                            <div class="variant-price" style="color:${variant.color}">
-                                ${variant.price.toLocaleString()} <span style="font-size:0.85rem;opacity:0.8">so'm</span>
+                            <div style="font-weight:700;font-size:1.3rem;color:${variant.color};">
+                                ${variant.price.toLocaleString()} <span style="font-size:0.85rem;opacity:0.8;">so'm</span>
                             </div>
-                            <span class="variant-badge ${statusClass}">${statusText}</span>
+                            <span class="badge ${statusClass}">${statusText}</span>
                         </div>
-                        <div class="variant-actions">
-                            <button onclick="editRank(${variant.id})" class="btn btn-icon" title="Tahrirlash">
+                        <div style="display:flex;gap:0.5rem;">
+                            <button onclick="editRank(${variant.id})" class="btn btn-sm" title="Tahrirlash" style="padding:0.6rem 0.9rem;">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button onclick="deleteRank(${variant.id}, '${variant.name}', '${variant.duration}')" class="btn btn-danger btn-icon" title="O'chirish">
+                            <button onclick="deleteRank(${variant.id}, '${variant.name}', '${variant.duration}')" class="btn btn-danger btn-sm" title="O'chirish" style="padding:0.6rem 0.9rem;">
                                 <i class="fas fa-trash"></i>
+                            </button>
+                            <button onclick="duplicateRank(${variant.id})" class="btn btn-secondary btn-sm" title="Nusxa olish" style="padding:0.6rem 0.9rem;">
+                                <i class="fas fa-copy"></i>
                             </button>
                         </div>
                     </div>`;
@@ -2394,17 +1863,21 @@ def admin_ranks():
             html += `</div>`;
         }
 
-        container.innerHTML = html || '<p style="text-align:center;color:var(--text-dim);padding:3rem">Hech qanday rank yo\'q</p>';
+        container.innerHTML = html || '<div class="card"><p style="text-align:center;color:var(--text-dim);padding:3rem;">Hech qanday rank topilmadi</p></div>';
+    }
+
+    function filterRanks() {
+        renderRanks();
     }
 
     function showAddModal() {
         editMode = false;
-        document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle"></i> Yangi Rank Qo\'shish';
+        document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle"></i> Yangi Rank Qo\\'shish';
         document.getElementById('rankForm').reset();
         document.getElementById('rankId').value = '';
         document.getElementById('rankColorPicker').value = '#3b82f6';
         document.getElementById('rankColor').value = '#3b82f6';
-        document.getElementById('rankModal').classList.add('active');
+        document.getElementById('rankModal').style.display = 'flex';
     }
 
     function editRank(id) {
@@ -2423,11 +1896,11 @@ def admin_ranks():
         document.getElementById('rankColor').value = pkg.color;
         document.getElementById('rankColorPicker').value = pkg.color;
         document.getElementById('rankActive').value = pkg.is_active ? '1' : '0';
-        document.getElementById('rankModal').classList.add('active');
+        document.getElementById('rankModal').style.display = 'flex';
     }
 
     function closeModal() {
-        document.getElementById('rankModal').classList.remove('active');
+        document.getElementById('rankModal').style.display = 'none';
     }
 
     async function handleSubmit(e) {
@@ -2458,9 +1931,9 @@ def admin_ranks():
         if (result.success) {
             closeModal();
             loadRanks();
-            alert(result.message);
+            showToast(result.message, 'success');
         } else {
-            alert('Xatolik: ' + (result.message || 'Noma\'lum xatolik'));
+            showToast('Xatolik: ' + (result.message || 'Noma\\'lum xatolik'), 'error');
         }
 
         return false;
@@ -2474,18 +1947,92 @@ def admin_ranks():
 
         if (result.success) {
             loadRanks();
-            alert(result.message);
+            showToast(result.message, 'success');
         } else {
-            alert('Xatolik: ' + (result.message || 'Noma\'lum xatolik'));
+            showToast('Xatolik: ' + (result.message || 'Noma\\'lum xatolik'), 'error');
         }
     }
 
-    // ESC tugmasi bilan yopish
+    async function duplicateRank(id) {
+        const pkg = allPackages.find(p => p.id === id);
+        if (!pkg || !confirm(`"${pkg.name}" dan nusxa olishga ishonchingiz komilmi?`)) return;
+
+        const data = {
+            name: pkg.name + ' (Copy)',
+            category: pkg.category,
+            description: pkg.description,
+            price: pkg.price,
+            duration: pkg.duration,
+            features: pkg.features,
+            color: pkg.color,
+            is_active: 0
+        };
+
+        const res = await fetch('/admin/add_rank', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+
+        if (result.success) {
+            loadRanks();
+            showToast('Rank nusxalandi!', 'success');
+        } else {
+            showToast('Xatolik yuz berdi!', 'error');
+        }
+    }
+
+    async function bulkActivate() {
+        if (!confirm('Barcha ranklarni aktivlashtirish ishonchingiz komilmi?')) return;
+
+        for (const pkg of allPackages) {
+            if (!pkg.is_active) {
+                await fetch(`/admin/edit_rank/${pkg.id}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({...pkg, is_active: 1})
+                });
+            }
+        }
+
+        loadRanks();
+        showToast('Barcha ranklar aktivlashtirildi!', 'success');
+    }
+
+    async function bulkDeactivate() {
+        if (!confirm('Barcha ranklarni o\\'chirish ishonchingiz komilmi?')) return;
+
+        for (const pkg of allPackages) {
+            if (pkg.is_active) {
+                await fetch(`/admin/edit_rank/${pkg.id}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({...pkg, is_active: 0})
+                });
+            }
+        }
+
+        loadRanks();
+        showToast('Barcha ranklar o\\'chirildi!', 'success');
+    }
+
+    function exportRanks() {
+        const dataStr = JSON.stringify(allPackages, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const exportFileDefaultName = 'ranks_backup_' + new Date().toISOString().slice(0,10) + '.json';
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportFileDefaultName);
+        linkElement.click();
+        showToast('Ranklar export qilindi!', 'success');
+    }
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeModal();
     });
 
-    // Modal tashqarisiga bosish bilan yopish
     document.getElementById('rankModal').addEventListener('click', (e) => {
         if (e.target.id === 'rankModal') closeModal();
     });
@@ -2497,43 +2044,9 @@ def admin_ranks():
     return render_page(content, logged_in=True, is_admin=True)
 
 
-@app.route('/admin/add_rank', methods=['POST'])
-@admin_required
-def add_rank():
-    data = request.get_json()
-    conn = get_db()
-    conn.execute("""INSERT INTO packages (category, name, description, price, duration, features, color, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-    (data.get('category'), data.get('name'), data.get('description', ''),
-     data.get('price', 0), data.get('duration', ''), data.get('features', ''),
-     data.get('color', '#3b82f6'), data.get('is_active', 1)))
-    conn.commit()
-    conn.close()
-    return jsonify(success=True, message='Rank muvaffaqiyatli qo\'shildi!')
-
-
-@app.route('/admin/edit_rank/<int:rank_id>', methods=['POST'])
-@admin_required
-def edit_rank(rank_id):
-    data = request.get_json()
-    conn = get_db()
-    conn.execute("""UPDATE packages SET name=?, description=?, price=?, duration=?, features=?, color=?, category=?, is_active=? WHERE id=?""",
-    (data.get('name'), data.get('description'), data.get('price'), data.get('duration'),
-     data.get('features'), data.get('color'), data.get('category'), data.get('is_active', 1), rank_id))
-    conn.commit()
-    conn.close()
-    return jsonify(success=True, message='Rank muvaffaqiyatli yangilandi!')
-
-
-@app.route('/admin/delete_rank/<int:rank_id>', methods=['POST'])
-@admin_required
-def delete_rank(rank_id):
-    conn = get_db()
-    conn.execute('DELETE FROM packages WHERE id=?', (rank_id,))
-    conn.commit()
-    conn.close()
-    return jsonify(success=True, message='Rank o\'chirildi!')
-
+# ═══════════════════════════════════════════════
+# ADMIN PANEL
+# ═══════════════════════════════════════════════
 
 @app.route('/admin')
 @admin_required
@@ -2566,6 +2079,7 @@ def admin_panel():
         </div>
         <div class="tabs">
             <a href="/admin" class="tab active"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+            <a href="/admin/ranks" class="tab"><i class="fas fa-crown"></i> Ranklar</a>
             <a href="/admin/news" class="tab"><i class="fas fa-newspaper"></i> Yangiliklar</a>
             <a href="/admin/deposits?status=all" class="tab"><i class="fas fa-credit-card"></i> To'lovlar</a>
             <a href="/admin/users" class="tab"><i class="fas fa-users"></i> Users</a>
@@ -2593,7 +2107,7 @@ def approve_deposit(did):
     if dep and dep['status'] == 'pending':
         conn.execute('UPDATE users SET balance=balance+? WHERE id=?', (dep['amount'], dep['user_id']))
         conn.execute('UPDATE balance_deposits SET status=?,admin_comment=? WHERE id=?', ('approved', comment, did))
-        conn.commit();
+        conn.commit()
         conn.close()
         return jsonify(success=True, message="To'lov tasdiqlandi!")
     conn.close()
@@ -2609,7 +2123,7 @@ def reject_deposit(did):
     dep = conn.execute('SELECT * FROM balance_deposits WHERE id=?', (did,)).fetchone()
     if dep and dep['status'] == 'pending':
         conn.execute('UPDATE balance_deposits SET status=?,admin_comment=? WHERE id=?', ('rejected', comment, did))
-        conn.commit();
+        conn.commit()
         conn.close()
         return jsonify(success=True, message="To'lov rad etildi!")
     conn.close()
@@ -2695,7 +2209,7 @@ def update_balance():
     if user_id and new_balance is not None:
         conn = get_db()
         conn.execute('UPDATE users SET balance=? WHERE id=?', (new_balance, user_id))
-        conn.commit();
+        conn.commit()
         conn.close()
     return redirect(url_for('admin_users'))
 
@@ -2724,55 +2238,53 @@ def admin_support_list():
     return render_page(content, logged_in=True, is_admin=True)
 
 
-@app.route('/admin/edit_rank/<int:rank_id>', methods=['POST'])
+# ═══════════════════════════════════════════════
+# ADMIN RANK API ROUTES
+# ═══════════════════════════════════════════════
+
+@app.route('/admin/add_rank', methods=['POST'])
 @admin_required
-def admin_edit_rank(rank_id):
+def add_rank():
     try:
         data = request.get_json()
         conn = get_db()
-        conn.execute('''UPDATE packages SET 
-                        name=?, description=?, price=?, 
-                        duration=?, features=?, color=?, 
-                        category=?, is_active=?
-                        WHERE id=?''',
-                     (data['name'], data['description'], data['price'],
-                      data['duration'], data['features'], data['color'],
-                      data['category'], data.get('is_active', 1), rank_id))
+        conn.execute("""INSERT INTO packages (category, name, description, price, duration, features, color, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                     (data.get('category'), data.get('name'), data.get('description', ''),
+                      data.get('price', 0), data.get('duration', ''), data.get('features', ''),
+                      data.get('color', '#3b82f6'), data.get('is_active', 1)))
         conn.commit()
         conn.close()
-        return jsonify(success=True, message='Rank yangilandi!')
+        return jsonify(success=True, message='Rank muvaffaqiyatli qo\'shildi!')
+    except Exception as e:
+        return jsonify(success=False, message=str(e)), 500
+
+
+@app.route('/admin/edit_rank/<int:rank_id>', methods=['POST'])
+@admin_required
+def edit_rank(rank_id):
+    try:
+        data = request.get_json()
+        conn = get_db()
+        conn.execute("""UPDATE packages SET name=?, description=?, price=?, duration=?, features=?, color=?, category=?, is_active=? WHERE id=?""",
+                     (data.get('name'), data.get('description'), data.get('price'), data.get('duration'),
+                      data.get('features'), data.get('color'), data.get('category'), data.get('is_active', 1), rank_id))
+        conn.commit()
+        conn.close()
+        return jsonify(success=True, message='Rank muvaffaqiyatli yangilandi!')
     except Exception as e:
         return jsonify(success=False, message=str(e)), 500
 
 
 @app.route('/admin/delete_rank/<int:rank_id>', methods=['POST'])
 @admin_required
-def admin_delete_rank(rank_id):
+def delete_rank(rank_id):
     try:
         conn = get_db()
         conn.execute('DELETE FROM packages WHERE id=?', (rank_id,))
         conn.commit()
         conn.close()
         return jsonify(success=True, message='Rank o\'chirildi!')
-    except Exception as e:
-        return jsonify(success=False, message=str(e)), 500
-
-
-@app.route('/admin/add_rank', methods=['POST'])
-@admin_required
-def admin_add_rank():
-    try:
-        data = request.get_json()
-        conn = get_db()
-        conn.execute('''INSERT INTO packages 
-                        (category, name, description, price, duration, features, color, is_active)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                     (data['category'], data['name'], data['description'],
-                      data['price'], data['duration'], data['features'],
-                      data.get('color', '#3b82f6'), data.get('is_active', 1)))
-        conn.commit()
-        conn.close()
-        return jsonify(success=True, message='Rank qo\'shildi!')
     except Exception as e:
         return jsonify(success=False, message=str(e)), 500
 
@@ -2799,277 +2311,24 @@ def admin_settings():
     content = f'''
     <div class="container" style="max-width:800px;margin:0 auto;padding-top:2rem;">
         <div class="section-title"><h2>⚙️ Sozlamalar</h2></div>
-<div class="card">
-                <div class="card-header"><i class="fas fa-crown"></i><h2>Ranklar Boshqaruvi</h2></div>
-                <div id="ranksContainer" style="max-height:500px;overflow-y:auto;"></div>
-                <button onclick="showAddRankModal()" class="btn btn-success" style="width:100%;margin-top:1rem;">
-                    <i class="fas fa-plus"></i> Yangi Rank Qo'shish
-                </button>
-            </div>
+        <div class="tabs">
+            <a href="/admin" class="tab"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+            <a href="/admin/settings" class="tab active"><i class="fas fa-cog"></i> Settings</a>
+        </div>
         <form id="settingsForm">
-        <div class="card">
-                <div class="card-header"><i class="fas fa-crown"></i><h2>Ranklar Boshqaruvi</h2></div>
-                <div id="ranksContainer"></div>
-                <button onclick="showAddRankModal()" class="btn btn-success" style="width:100%;margin-top:1rem;">
-                    <i class="fas fa-plus"></i> Yangi Rank Qo'shish
-                </button>
+            <div class="card">
+                <div class="card-header"><i class="fas fa-server"></i><h2>Umumiy</h2></div>
+                <div class="form-group"><label>Sayt nomi</label>{inp('site_name')}</div>
+                <div class="form-group"><label>Server IP</label>{inp('server_ip')}</div>
+                <div class="form-group"><label>Server versiyasi</label>{inp('server_version')}</div>
             </div>
-        </form>
-        <script>
-        async function loadRanks() {{
-            const res = await fetch('/api/packages');
-            const data = await res.json();
-            const container = document.getElementById('ranksContainer');
 
-            let html = '';
-            for(let pkg of data) {{
-                const badge = pkg.is_active ? '<span style="color:green;font-weight:bold;">✓ Aktiv</span>' : '<span style="color:red;font-weight:bold;">✗ Nofaol</span>';
-                html += `
-                    <div style="border-bottom:1px solid var(--border);padding:1rem;background:var(--card-bg);margin-bottom:0.5rem;border-radius:8px;">
-                        <div style="display:flex;justify-content:space-between;align-items:start;">
-                            <div style="flex:1;">
-                                <div style="font-size:1.1rem;font-weight:bold;color:${{pkg.color}};">${{pkg.name}}</div>
-                                <div style="color:var(--text-dim);font-size:0.85rem;margin-top:0.2rem;">
-                                    <i class="fas fa-tag"></i> ${{pkg.category}} • ${{badge}}
-                                </div>
-                                <div style="margin-top:0.5rem;color:var(--text);">${{pkg.description}}</div>
-                                <div style="margin-top:0.3rem;">
-                                    <span style="color:var(--primary);font-weight:bold;">${{pkg.price.toLocaleString()}} so'm</span>
-                                    <span style="color:var(--text-dim);margin-left:1rem;">⏱ ${{pkg.duration}}</span>
-                                </div>
-                            </div>
-                            <div style="display:flex;gap:0.5rem;">
-                                <button onclick="editRank(${{pkg.id}})" class="btn btn-sm" style="background:var(--primary);">
-                                    <i class="fas fa-edit"></i> Tahrirlash
-                                </button>
-                                <button onclick="deleteRank(${{pkg.id}}, '${{pkg.name}}')" class="btn btn-sm" style="background:var(--danger);">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>`;
-            }}
-            container.innerHTML = html || '<p style="text-align:center;color:var(--text-dim);padding:2rem;">Hech qanday rank mavjud emas</p>';
-        }}
+            <div class="card">
+                <div class="card-header"><i class="fas fa-credit-card"></i><h2>To'lov</h2></div>
+                <div class="form-group"><label>Admin karta raqami</label>{inp('admin_card_number')}</div>
+                <div class="form-group"><label>Karta egasi</label>{inp('admin_card_name')}</div>
+            </div>
 
-        async function editRank(id) {{
-            const res = await fetch('/api/packages');
-            const data = await res.json();
-            const pkg = data.find(p => p.id === id);
-            if(!pkg) return alert('Rank topilmadi!');
-
-            const newName = prompt('Rank nomi:', pkg.name);
-            if(!newName) return;
-
-            const newDesc = prompt('Tavsif:', pkg.description);
-            if(newDesc === null) return;
-
-            const newPrice = prompt('Narxi (so\\'m):', pkg.price);
-            if(newPrice === null) return;
-
-            const newDuration = prompt('Muddati:', pkg.duration);
-            if(newDuration === null) return;
-
-            const newFeatures = prompt('Imkoniyatlar (vergul bilan):', pkg.features);
-            if(newFeatures === null) return;
-
-            const newColor = prompt('Rang kodi (masalan: #3b82f6):', pkg.color);
-            if(newColor === null) return;
-
-            const newCategory = prompt('Kategoriya (anarchy/smp/keys/services/token):', pkg.category);
-            if(newCategory === null) return;
-
-            const isActive = confirm('Rank aktiv bo\\'lsinmi?') ? 1 : 0;
-
-            const response = await fetch(`/admin/edit_rank/${{id}}`, {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{
-                    name: newName,
-                    description: newDesc,
-                    price: parseFloat(newPrice),
-                    duration: newDuration,
-                    features: newFeatures,
-                    color: newColor,
-                    category: newCategory,
-                    is_active: isActive
-                }})
-            }});
-
-            const result = await response.json();
-            alert(result.message);
-            if(result.success) loadRanks();
-        }}
-
-        async function deleteRank(id, name) {{
-            if(!confirm(`"${{name}}" rankini o'chirib tashlashga ishonchingiz komilmi?\\n\\nBu amalni qaytarib bo'lmaydi!`)) return;
-
-            const response = await fetch(`/admin/delete_rank/${{id}}`, {{
-                method: 'POST'
-            }});
-
-            const result = await response.json();
-            alert(result.message);
-            if(result.success) loadRanks();
-        }}
-
-        async function showAddRankModal() {{
-            const name = prompt('Rank nomi:');
-            if(!name) return;
-
-            const description = prompt('Tavsif:');
-            if(!description) return;
-
-            const price = prompt('Narxi (so\\'m):');
-            if(!price) return;
-
-            const duration = prompt('Muddati (masalan: 30 kun):');
-            if(!duration) return;
-
-            const features = prompt('Imkoniyatlar (vergul bilan ajratilgan):');
-            if(!features) return;
-
-            const color = prompt('Rang kodi (masalan: #3b82f6):', '#3b82f6');
-            const category = prompt('Kategoriya (anarchy/smp/keys/services/token):', 'anarchy');
-
-            const response = await fetch('/admin/add_rank', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{
-                    name, description, 
-                    price: parseFloat(price), 
-                    duration, features, 
-                    color: color || '#3b82f6', 
-                    category: category || 'anarchy',
-                    is_active: 1
-                }})
-            }});
-
-            const result = await response.json();
-            alert(result.message);
-            if(result.success) loadRanks();
-        }}
-
-        document.addEventListener('DOMContentLoaded', loadRanks);
-        </script>
-
-        <button onclick="saveSettings()" class="btn btn-primary btn-full" style="margin-bottom:3rem;">Saqlash</button>
-    </div>
-
-    <script>
-    // Ranklar ro'yxatini yuklash
-    async function loadRanks() {{
-        const res = await fetch('/api/packages');
-        const data = await res.json();
-        const container = document.getElementById('ranksContainer');
-
-        let html = '';
-        for(let pkg of data) {{
-            const badge = pkg.is_active ? '<span style="color:green;">✓ Aktiv</span>' : '<span style="color:red;">✗ O\'chirilgan</span>';
-            html += `
-                <div style="border-bottom:1px solid var(--border);padding:1rem 0;">
-                    <div style="display:flex;justify-content:space-between;align-items:start;">
-                        <div>
-                            <strong>${{pkg.name}}</strong> <small>(${{pkg.category}})</small> ${{badge}}
-                            <div style="color:var(--text-dim);font-size:0.9rem;">${{pkg.description}}</div>
-                            <div style="color:var(--primary);margin-top:0.3rem;">${{pkg.price}} so'm</div>
-                        </div>
-                        <div>
-                            <button onclick="editRank(${{pkg.id}})" class="btn btn-sm" style="margin-right:0.5rem;">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button onclick="deleteRank(${{pkg.id}}, '${{pkg.name}}')" class="btn btn-sm" style="background:var(--danger);">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>`;
-        }}
-        container.innerHTML = html || '<p style="text-align:center;color:var(--text-dim);padding:2rem;">Hech qanday rank yo\'q</p>';
-    }}
-
-    // Rankni tahrirlash
-    async function editRank(id) {{
-        const res = await fetch('/api/packages');
-        const data = await res.json();
-        const pkg = data.find(p => p.id === id);
-
-        const newName = prompt('Rank nomi:', pkg.name);
-        if(!newName) return;
-
-        const newDesc = prompt('Tavsifi:', pkg.description);
-        const newPrice = prompt('Narxi (so\'m):', pkg.price);
-        const newDuration = prompt('Davomiyligi:', pkg.duration);
-        const newFeatures = prompt('Imkoniyatlar (vergul bilan):', pkg.features);
-        const newColor = prompt('Rang (hex):', pkg.color);
-        const newCategory = prompt('Kategoriya (anarchy/smp/keys/services/token):', pkg.category);
-        const isActive = confirm('Aktiv bo\'lsinmi?') ? 1 : 0;
-
-        const response = await fetch(`/admin/edit_rank/${{id}}`, {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{
-                name: newName,
-                description: newDesc || pkg.description,
-                price: parseFloat(newPrice) || pkg.price,
-                duration: newDuration || pkg.duration,
-                features: newFeatures || pkg.features,
-                color: newColor || pkg.color,
-                category: newCategory || pkg.category,
-                is_active: isActive
-            }})
-        }});
-
-        const result = await response.json();
-        alert(result.message);
-        if(result.success) loadRanks();
-    }}
-
-    // Rankni o'chirish
-    async function deleteRank(id, name) {{
-        if(!confirm(`"${{name}}" rankni o'chirishga ishonchingiz komilmi?`)) return;
-
-        const response = await fetch(`/admin/delete_rank/${{id}}`, {{
-            method: 'POST'
-        }});
-
-        const result = await response.json();
-        alert(result.message);
-        if(result.success) loadRanks();
-    }}
-
-    // Yangi rank qo'shish
-    function showAddRankModal() {{
-        const name = prompt('Rank nomi:');
-        if(!name) return;
-
-        const description = prompt('Tavsifi:');
-        const price = prompt('Narxi (so\'m):');
-        const duration = prompt('Davomiyligi (masalan: 30 kun):');
-        const features = prompt('Imkoniyatlar (vergul bilan ajratilgan):');
-        const color = prompt('Rang (hex, masalan #3b82f6):', '#3b82f6');
-        const category = prompt('Kategoriya (anarchy/smp/keys/services/token):', 'anarchy');
-
-        addRank({{
-            name, description, price: parseFloat(price), duration, features, color, category
-        }});
-    }}
-
-    async function addRank(data) {{
-        const response = await fetch('/admin/add_rank', {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify(data)
-        }});
-
-        const result = await response.json();
-        alert(result.message);
-        if(result.success) loadRanks();
-    }}
-
-
-    loadRanks();
-    </script>
             <div class="card">
                 <div class="card-header"><h2>Trayler Sozlamalari</h2></div>
                 <div class="form-group"><label>Trayler ko'rsatilsinmi?</label>
@@ -3094,6 +2353,7 @@ def admin_settings():
                 <div class="form-group"><label>Port</label>{inp('smp_rcon_port', 'number')}</div>
                 <div class="form-group"><label>Parol</label>{inp('smp_rcon_password', 'password')}</div>
             </div>
+
             <div class="card">
                 <div class="card-header"><i class="fas fa-music"></i><h2>Media</h2></div>
                 <div class="form-group"><label>Musiqa URL</label>{inp('music_url')}</div>
@@ -3101,6 +2361,12 @@ def admin_settings():
                     <select name="music_enabled" form="settingsForm">
                         <option value="1" {'selected' if settings.get('music_enabled') == '1' else ''}>Ha</option>
                         <option value="0" {'selected' if settings.get('music_enabled') == '0' else ''}>Yo'q</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Kuchiq ovozi yoqilgan?</label>
+                    <select name="dog_sound_enabled" form="settingsForm">
+                        <option value="1" {'selected' if settings.get('dog_sound_enabled') == '1' else ''}>Ha</option>
+                        <option value="0" {'selected' if settings.get('dog_sound_enabled') == '0' else ''}>Yo'q</option>
                     </select>
                 </div>
             </div>
@@ -3123,7 +2389,7 @@ def uploaded_file(filename):
 @app.route('/api/packages')
 def api_packages():
     conn = get_db()
-    packages = [dict(row) for row in conn.execute('SELECT * FROM packages').fetchall()]
+    packages = [dict(row) for row in conn.execute('SELECT * FROM packages ORDER BY sort_order, category, price').fetchall()]
     conn.close()
     return jsonify(packages)
 
@@ -3138,9 +2404,6 @@ def api_stats():
     return jsonify(total_users=tu, total_purchases=tp, total_revenue=tr)
 
 
-# ---------------------------------------------------
-#  API - SERVERDAN STATISTIKANI QABUL QILISH UCHUN
-# ---------------------------------------------------
 @app.route('/api/update_stats', methods=['POST'])
 def update_player_stats():
     SECRET_TOKEN = "ssmernix_legend_teams"
@@ -3162,16 +2425,14 @@ def update_player_stats():
             return jsonify(success=False, message="Nik yoki Server turi yo'q")
 
         conn = get_db()
-        # Bazaga yozish (agar bor bo'lsa yangilash, yo'q bo'lsa yaratish)
         conn.execute('''INSERT INTO player_stats (minecraft_nick, server_type, kills, deaths, time_played, money)
                         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(minecraft_nick, server_type) 
-                        DO
-        UPDATE SET
+                        DO UPDATE SET
             kills=?,
             deaths=?,
             time_played=?,
             money=?,
-            last_updated= CURRENT_TIMESTAMP''',
+            last_updated=CURRENT_TIMESTAMP''',
                      (nick, srv, kills, deaths, time_played, money,
                       kills, deaths, time_played, money))
         conn.commit()
@@ -3192,15 +2453,12 @@ if not os.path.exists('elitemc.db'):
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    
+
     print("=" * 62)
     print("  🎮  EliteMC.uz — Ultra Premium Donate Platform")
     print("=" * 62)
     print(f"  📍 URL          : http://0.0.0.0:{port}")
-    print(f"  👤 Admin        : admin")
+    print(f"  👤 Admin        : admin / ssmertnix_legend")
     print("=" * 62)
 
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
-
-
-
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
