@@ -41,8 +41,8 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# KUCHIQ OVOZI URL (YouTube embed with dog barking sound)
-DOG_BARK_SOUND_URL = "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=0&loop=1&playlist=dQw4w9WgXcQ&controls=0"
+
+DOG_BARK_SOUND_URL = "https://www.youtube.com/embed/skRN9ZZ1XyU?autoplay=1&mute=1&loop=1&playlist=skRN9ZZ1XyU"
 
 
 def get_real_online(ip_address):
@@ -215,7 +215,7 @@ def init_db():
         ('rcon_host', '185.130.212.39'),
         ('rcon_port', '25496'),
         ('rcon_password', '@shoxauz054uzcvre@$%'),
-        ('music_url', 'https://www.youtube.com/embed/atgjKEgSqSU?autoplay=1&mute=1&enablejsapi=1'),
+        ('music_url', 'https://www.youtube.com/embed/skRN9ZZ1XyU?autoplay=1&mute=1&loop=1&playlist=skRN9ZZ1XyU'),
         ('music_enabled', '1'),
         ('dog_sound_enabled', '1')
     ]
@@ -2462,3 +2462,4 @@ if __name__ == '__main__':
     print("=" * 62)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
+
