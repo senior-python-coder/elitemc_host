@@ -41,8 +41,8 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-
-DOG_BARK_SOUND_URL = "https://www.youtube.com/embed/skRN9ZZ1XyU?autoplay=1&mute=1&loop=1&playlist=skRN9ZZ1XyU"
+# C418 - Aria Math (orqa fon musiqasi)
+C418_MUSIC_URL = "https://www.youtube.com/embed/tDexBj46oNI?autoplay=1&mute=1&loop=1&playlist=tDexBj46oNI&controls=0"
 
 
 def get_real_online(ip_address):
@@ -215,9 +215,8 @@ def init_db():
         ('rcon_host', '185.130.212.39'),
         ('rcon_port', '25496'),
         ('rcon_password', '@shoxauz054uzcvre@$%'),
-        ('music_url', 'https://www.youtube.com/embed/skRN9ZZ1XyU?autoplay=1&mute=1&loop=1&playlist=skRN9ZZ1XyU'),
+        ('music_url', 'https://www.youtube.com/embed/tDexBj46oNI?autoplay=1&mute=1&loop=1&playlist=tDexBj46oNI&controls=0'),
         ('music_enabled', '1'),
-        ('dog_sound_enabled', '1')
     ]
     for k, v in defaults:
         c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (k, v))
@@ -285,9 +284,7 @@ def render_page(body_content: str, **kwargs) -> str:
     music_playing_class = 'playing' if has_music else ''
     music_init_js = 'true' if has_music else 'false'
 
-    # KUCHIQ OVOZI
-    dog_sound_enabled = settings.get('dog_sound_enabled', '1')
-    dog_sound_html = f'<iframe class="dog-sound-iframe" id="dogSoundIframe" src="{DOG_BARK_SOUND_URL}" allow="autoplay; encrypted-media" style="position:fixed;bottom:-999px;right:-999px;width:1px;height:1px;opacity:0;border:none;pointer-events:none;"></iframe>' if dog_sound_enabled == '1' else ''
+    dog_sound_html = ''
 
     server_ip = settings.get('server_ip', 'mc.elitemc.uz')
 
@@ -581,7 +578,7 @@ footer a{{color:var(--primary);text-decoration:none;font-weight:600;}}
 <main>{body_content}</main>
 <footer>
     <div class="container">
-        <p>© 2026 <a href="/">EliteMC</a> — Uzbekistandagi N1 Minecraft Server</p>
+        <p>© 2024 <a href="/">EliteMC</a> — Uzbekistandagi N1 Minecraft Server</p>
         <p style="margin-top:.5rem;font-size:.78rem;">Server IP: <strong style="color:var(--primary);">{server_ip}</strong></p>
     </div>
 </footer>
@@ -1462,43 +1459,71 @@ def view_ticket(ticket_id):
             </div>
         </div>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <script>
     (function(){{
         const TID={ticket_id}, UID={session['user_id']}, IS_ADMIN={'true' if session.get('is_admin') else 'false'}, UNAME='{sanitize(session.get("username", ""))}';
         const area=document.getElementById('messagesArea'), inp=document.getElementById('chatInput'), btn=document.getElementById('sendBtn');
-        const typEl=document.getElementById('typingIndicator'), typWho=document.getElementById('typingWho');
         function scrollBot(){{area.scrollTop=area.scrollHeight;}} scrollBot();
-        let socket=null;
-        try{{socket=io();}}catch(e){{}}
-        if(socket){{
-            socket.emit('join_ticket',{{ticket_id:TID}});
-            socket.on('new_message',d=>{{ if(d.ticket_id!==TID||d.user_id===UID) return; appendMsg(d); scrollBot(); }});
-            socket.on('typing',d=>{{ if(d.ticket_id!==TID||d.user_id===UID) return; typWho.textContent=d.username; typEl.style.display='flex'; clearTimeout(typEl._t); typEl._t=setTimeout(()=>typEl.style.display='none',2500); }});
-            let tt=null;
-            inp.addEventListener('input',()=>{{ if(!tt){{socket.emit('typing',{{ticket_id:TID,user_id:UID,username:UNAME}}); tt=setTimeout(()=>tt=null,1200);}} }});
-        }}
-        function appendMsg(d){{
-            const mine=(d.user_id===UID), cls=mine?'msg mine':'msg', av=mine?'user-av':'admin-av';
+        let lastCount = area.querySelectorAll('.msg').length;
+
+        function appendMsg(d, mine){{
+            const cls=mine?'msg mine':'msg', av=mine?'user-av':'admin-av';
             const al=(d.username||'?')[0].toUpperCase();
-            const at=d.is_admin?'<span class="admin-tag"><i class="fas fa-bolt"></i> Admin</span> ':'';
-            const now=new Date().toLocaleString('uz-UZ',{{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}});
+            const at=d.is_admin_reply?'<span class="admin-tag"><i class="fas fa-bolt"></i> Admin</span> ':'';
+            const time=d.created_at?d.created_at.substring(0,16):new Date().toLocaleTimeString('uz-UZ',{{hour:'2-digit',minute:'2-digit'}});
             const div=document.createElement('div'); div.className=cls;
-            div.innerHTML='<div class="msg-avatar '+av+'">'+al+'</div><div><div class="msg-bubble">'+d.message+'</div><div class="msg-meta">'+at+d.username+' • '+now+'</div></div>';
+            div.innerHTML='<div class="msg-avatar '+av+'">'+al+'</div><div><div class="msg-bubble">'+d.message+'</div><div class="msg-meta">'+at+(d.username||UNAME)+' • '+time+'</div></div>';
             area.appendChild(div);
         }}
+
         async function send(){{
-            const t=inp.value.trim(); if(!t) return; inp.value='';
-            const o={{ticket_id:TID,user_id:UID,username:UNAME,message:t,is_admin:IS_ADMIN}};
-            appendMsg(o); scrollBot();
-            if(socket) socket.emit('send_message',o);
-            try{{await fetch('/support/'+TID+'/send',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:t}})}});}}catch(e){{}}
+            const t=inp.value.trim(); if(!t) return;
+            inp.value=''; inp.disabled=true;
+            // Optimistic UI
+            appendMsg({{username:UNAME,message:t,is_admin_reply:IS_ADMIN==='true'}}, true);
+            scrollBot();
+            try{{
+                await fetch('/support/'+TID+'/send',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:t}})}});
+            }}catch(e){{}}
+            inp.disabled=false; inp.focus();
         }}
+
+        // Polling — har 3 soniyada yangi xabarlar tekshiriladi
+        async function pollMessages(){{
+            try{{
+                const r=await fetch('/support/'+TID+'/messages');
+                const msgs=await r.json();
+                if(msgs.length>lastCount){{
+                    const newMsgs=msgs.slice(lastCount);
+                    newMsgs.forEach(m=>{{
+                        if(m.user_id!==UID){{ appendMsg(m, false); scrollBot(); }}
+                    }});
+                    lastCount=msgs.length;
+                }}
+            }}catch(e){{}}
+        }}
+        setInterval(pollMessages, 3000);
+
         btn.addEventListener('click',send);
-        inp.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();send();}}}}); 
+        inp.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();send();}}}});
     }})();
     </script>'''
     return render_page(content, logged_in=True, is_admin=session.get('is_admin', False))
+
+
+@app.route('/support/<int:ticket_id>/messages')
+@login_required
+def get_ticket_messages(ticket_id):
+    conn = get_db()
+    ticket = conn.execute('SELECT * FROM support_tickets WHERE id=?', (ticket_id,)).fetchone()
+    if not ticket or (ticket['user_id'] != session['user_id'] and not session.get('is_admin')):
+        conn.close()
+        return jsonify([])
+    messages = conn.execute(
+        'SELECT sm.*, u.username FROM support_messages sm JOIN users u ON sm.user_id=u.id WHERE ticket_id=? ORDER BY sm.created_at ASC',
+        (ticket_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(m) for m in messages])
 
 
 @app.route('/support/<int:ticket_id>/send', methods=['POST'])
@@ -2363,12 +2388,6 @@ def admin_settings():
                         <option value="0" {'selected' if settings.get('music_enabled') == '0' else ''}>Yo'q</option>
                     </select>
                 </div>
-                <div class="form-group"><label>Kuchiq ovozi yoqilgan?</label>
-                    <select name="dog_sound_enabled" form="settingsForm">
-                        <option value="1" {'selected' if settings.get('dog_sound_enabled') == '1' else ''}>Ha</option>
-                        <option value="0" {'selected' if settings.get('dog_sound_enabled') == '0' else ''}>Yo'q</option>
-                    </select>
-                </div>
             </div>
         </form>
 
@@ -2453,14 +2472,10 @@ if not os.path.exists('elitemc.db'):
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-
     print("=" * 62)
     print("  🎮  EliteMC.uz — Ultra Premium Donate Platform")
     print("=" * 62)
     print(f"  📍 URL          : http://0.0.0.0:{port}")
     print(f"  👤 Admin        : admin / ssmertnix_legend")
     print("=" * 62)
-
-    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
-
-
+    app.run(host='0.0.0.0', port=port, debug=False)
