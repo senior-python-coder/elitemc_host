@@ -42,7 +42,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # C418 - Aria Math (orqa fon musiqasi)
-C418_MUSIC_URL = "https://www.youtube.com/embed/tDexBj46oNI?autoplay=1&mute=1&loop=1&playlist=tDexBj46oNI&controls=0"
+C418_MUSIC_URL = "https://www.youtube.com/embed/atgjKEgSqSU?autoplay=1&mute=1&loop=1&playlist=atgjKEgSqSU"
 
 
 def get_real_online(ip_address):
@@ -215,7 +215,7 @@ def init_db():
         ('rcon_host', '185.130.212.39'),
         ('rcon_port', '25496'),
         ('rcon_password', '@shoxauz054uzcvre@$%'),
-        ('music_url', 'https://www.youtube.com/embed/tDexBj46oNI?autoplay=1&mute=1&loop=1&playlist=tDexBj46oNI&controls=0'),
+        ('music_url', 'https://www.youtube.com/embed/atgjKEgSqSU?autoplay=1&mute=1&loop=1&playlist=atgjKEgSqSU'),
         ('music_enabled', '1'),
     ]
     for k, v in defaults:
@@ -2482,3 +2482,4 @@ if __name__ == '__main__':
     print(f"  👤 Admin        : admin / ssmertnix_legend")
     print("=" * 62)
     app.run(host='0.0.0.0', port=port, debug=False)
+
