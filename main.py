@@ -279,10 +279,12 @@ def render_page(body_content: str, **kwargs) -> str:
 
     music_url = settings.get('music_url', '')
     music_enabled = settings.get('music_enabled', '1')
-    has_music = (music_enabled == '1' and music_url != '')
-    music_iframe_html = f'<iframe class="music-iframe" id="musicIframe" src="{music_url}" allow="autoplay; encrypted-media"></iframe>' if has_music else ''
-    music_playing_class = 'playing' if has_music else ''
-    music_init_js = 'true' if has_music else 'false'
+    has_music = (music_enabled == '1')
+    # C418 - Aria Math (direct audio)
+    aria_math_url = "https://archive.org/download/minecraft-volume-alpha/C418%20-%20Minecraft%20-%20Volume%20Alpha/C418%20-%20Minecraft%20-%20Volume%20Alpha%20-%2013%20Aria%20Math.mp3"
+    music_iframe_html = f'<audio id="musicAudio" loop style="display:none;"><source src="{aria_math_url}" type="audio/mp3"></audio>' if has_music else ''
+    music_playing_class = ''
+    music_init_js = 'false'
 
     dog_sound_html = ''
 
@@ -586,16 +588,17 @@ footer a{{color:var(--primary);text-decoration:none;font-weight:600;}}
     <i class="fas fa-music"></i>
 </button>
 <script>
-let musicPlaying = {music_init_js};
+let musicPlaying = false;
+const musicAudio = document.getElementById('musicAudio');
+if(musicAudio) musicAudio.volume = 0.4;
 function toggleMusic() {{
-    const iframe = document.getElementById('musicIframe');
     const btn = document.getElementById('musicBtn');
-    if (!iframe) return;
+    if (!musicAudio) return;
     if (musicPlaying) {{
-        iframe.src = '';
+        musicAudio.pause();
         btn.classList.remove('playing');
     }} else {{
-        iframe.src = '{music_url}';
+        musicAudio.play().catch(()=>{{}});
         btn.classList.add('playing');
     }}
     musicPlaying = !musicPlaying;
@@ -1452,7 +1455,7 @@ def view_ticket(ticket_id):
                 <div class="chat-online">Online</div>
             </div>
             <div class="messages-area" id="messagesArea">{msgs_html}</div>
-            <div class="typing-indicator" id="typingIndicator" style="display:none;"><div class="typing-dots"><span></span><span></span><span></span></div><span id="typingWho">Admin</span> yozmoqda...</div>
+
             <div class="chat-input-area">
                 <input type="text" id="chatInput" placeholder="Xabar yozing..." autocomplete="off"/>
                 <button class="btn btn-primary btn-sm" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
