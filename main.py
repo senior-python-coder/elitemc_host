@@ -277,11 +277,10 @@ def render_page(body_content: str, **kwargs) -> str:
                 <li><a href="/register" class="btn-nav btn-nav-primary"><i class="fas fa-user-plus"></i> <span>Ro'yxat</span></a></li>
             """
 
-    music_url = settings.get('music_url', '')
     music_enabled = settings.get('music_enabled', '1')
     has_music = (music_enabled == '1')
-    # C418 - Aria Math (direct audio)
-    aria_math_url = settings.get("music_url") or "/static/music/bg.mp3"
+    # Har doim local mp3 fayl ishlatiladi (YouTube URL <audio> tagida ishlamaydi)
+    aria_math_url = "/static/music/bg.mp3"
     music_iframe_html = f'<audio id="musicAudio" loop preload="auto" style="display:none;"><source src="{aria_math_url}" type="audio/mpeg"></audio>' if has_music else ''
     music_playing_class = ''
     music_init_js = 'false'
