@@ -1,1 +1,1 @@
-web: gunicorn darkmine:app
+web: gunicorn main:app
