@@ -579,7 +579,7 @@ footer a{{color:var(--primary);text-decoration:none;font-weight:600;}}
 <main>{body_content}</main>
 <footer>
     <div class="container">
-        <p>© 2024 <a href="/">EliteMC</a> — Uzbekistandagi N1 Minecraft Server</p>
+        <p>© 2026 <a href="/">EliteMC</a> — Uzbekistandagi N1 Minecraft Server</p>
         <p style="margin-top:.5rem;font-size:.78rem;">Server IP: <strong style="color:var(--primary);">{server_ip}</strong></p>
     </div>
 </footer>
